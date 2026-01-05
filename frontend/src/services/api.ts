@@ -172,6 +172,7 @@ export interface Customer {
   trade_name?: string;
   gstin?: string;
   pan?: string;
+  mobile?: string; 
   email?: string;
   phone?: string;
   contact_person?: string;
@@ -222,6 +223,12 @@ export interface Product {
   min_stock_level?: number;
   opening_stock?: number;
   standard_cost?: number;
+  discount?: number;
+  discount_type?: string; // 'percentage' or 'amount'
+  // Add other properties if needed:
+  hsn?: string; // Add this if your backend uses `hsn` instead of `hsn_code`
+  tax_rate?: number; // Add this if needed
+  sales_price?: number; // Add this if needed
 }
 
 export interface ProductListResponse {
@@ -1318,6 +1325,27 @@ export interface OrderItem {
   total_amount?: number;
 }
 
+// Add these interfaces near the Customer section
+
+export interface Salesman {
+  id: string;
+  company_id: string;
+  name: string;
+  email?: string;
+  phone?: string;
+  commission_rate?: number;
+  target_amount?: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SalesmanListResponse {
+  salesmen: Salesman[];
+  total: number;
+  page: number;
+  page_size: number;
+}
 export interface SalesOrder {
   id: string;
   order_number: string;
@@ -1554,6 +1582,50 @@ export const ordersApi = {
     await api.delete(`/companies/${companyId}/orders/receipt-notes/${noteId}`);
   },
 };
+
+
+// Add this API section near the customersApi/vendorsApi section
+export const salesmenApi = {
+  list: async (
+    companyId: string,
+    params?: {
+      page?: number;
+      page_size?: number;
+      search?: string;
+      is_active?: boolean;
+    }
+  ): Promise<SalesmanListResponse> => {
+    const response = await api.get(`/companies/${companyId}/salesmen`, { params });
+    return response.data;
+  },
+
+  search: async (companyId: string, q: string, limit = 10): Promise<Salesman[]> => {
+    const response = await api.get(`/companies/${companyId}/salesmen/search`, {
+      params: { q, limit },
+    });
+    return response.data;
+  },
+
+  get: async (companyId: string, salesmanId: string): Promise<Salesman> => {
+    const response = await api.get(`/companies/${companyId}/salesmen/${salesmanId}`);
+    return response.data;
+  },
+
+  create: async (companyId: string, data: Partial<Salesman>): Promise<Salesman> => {
+    const response = await api.post(`/companies/${companyId}/salesmen`, data);
+    return response.data;
+  },
+
+  update: async (companyId: string, salesmanId: string, data: Partial<Salesman>): Promise<Salesman> => {
+    const response = await api.put(`/companies/${companyId}/salesmen/${salesmanId}`, data);
+    return response.data;
+  },
+
+  delete: async (companyId: string, salesmanId: string): Promise<void> => {
+    await api.delete(`/companies/${companyId}/salesmen/${salesmanId}`);
+  },
+};
+
 
 // ============== GST Integration Types ==============
 

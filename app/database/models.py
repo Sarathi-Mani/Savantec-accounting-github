@@ -21,6 +21,7 @@ from app.database.connection import Base
 import uuid
 
 
+discount_type_enum = Enum('percentage', 'fixed', name='discount_type_enum', create_type=False)
 def generate_uuid():
     """Generate a UUID string."""
     return str(uuid.uuid4())
@@ -451,10 +452,69 @@ class User(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
+    items = relationship("Product", back_populates="creator")
+    taxes = relationship("Tax", back_populates="creator")
+    brands = relationship("Brand", back_populates="creator")
+    categories = relationship("Category", back_populates="creator")
     companies = relationship("Company", back_populates="owner", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<User {self.email}>"
+
+
+
+
+class Brand(Base):
+    """Brand model for items."""
+    __tablename__ = "brands"
+    
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    name = Column(String(100), nullable=False)
+    status = Column(Boolean, default=True)
+    created_by = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    creator = relationship("User")
+    
+    def __repr__(self):
+        return f"<Brand(id={self.id}, name='{self.name}')>"
+
+
+class Category(Base):
+    """Category model for items."""
+    __tablename__ = "categories"
+    
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    name = Column(String(100), nullable=False)
+    status = Column(Boolean, default=True)
+    created_by = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    creator = relationship("User")
+    
+    def __repr__(self):
+        return f"<Category(id={self.id}, name='{self.name}')>"
+
+
+class Tax(Base):
+    """Tax model for items."""
+    __tablename__ = "taxes"
+    
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    name = Column(String(50), nullable=False)
+    rate = Column(Numeric(5, 2), nullable=False)  # Tax rate percentage
+    created_by = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    items = relationship("Product", back_populates="tax")
+    creator = relationship("User", back_populates="taxes")
+    
+    def __repr__(self):
+        return f"<Tax(id={self.id}, name='{self.name}', rate={self.rate})>"
+
 
 
 class Company(Base):
@@ -600,82 +660,47 @@ class Customer(Base):
 
 class Product(Base):
     """Product/Service model - Unified product with inventory tracking."""
-    __tablename__ = "products"
+    __tablename__ = "items"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    company_id = Column(String(36), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
-    
-    # Product details
-    name = Column(String(255), nullable=False)
-    description = Column(Text)
-    sku = Column(String(50))  # Stock Keeping Unit / Code
-    barcode = Column(String(100))  # Barcode
-    
-    # Categorization
-    stock_group_id = Column(String(36), ForeignKey("stock_groups.id", ondelete="SET NULL"))
-    
-    # HSN/SAC Code for GST
-    hsn_code = Column(String(8))
-    
-    # Pricing
-    unit_price = Column(Numeric(12, 2), nullable=False)
-    standard_selling_price = Column(Numeric(14, 2))  # Alias for unit_price, kept for compatibility
-    unit = Column(String(20), default="unit")  # unit, kg, hrs, etc.
-    primary_unit = Column(String(20), default="unit")  # Alias for unit
-    secondary_unit = Column(String(20))
-    conversion_factor = Column(Numeric(10, 4), default=1)  # secondary = primary * factor
-    
-    # Tax
-    gst_rate = Column(String(5), default="18")  # GST rate percentage
-    is_inclusive = Column(Boolean, default=False)  # Is price inclusive of GST
-    
-    # Type
-    is_service = Column(Boolean, default=False)  # Product or Service
-    
-    # Stock levels (for non-services)
-    opening_stock = Column(Numeric(14, 3), default=0)
-    current_stock = Column(Numeric(14, 3), default=0)
-    min_stock_level = Column(Numeric(14, 3), default=0)  # Reorder level
-    max_stock_level = Column(Numeric(14, 3))
-    
-    # Valuation
-    valuation_method = Column(String(20), default="fifo")  # fifo, lifo, average
-    standard_cost = Column(Numeric(14, 2), default=0)
-    
-    # Batch tracking
-    enable_batch = Column(Boolean, default=False)
-    enable_expiry = Column(Boolean, default=False)
-    
-    # Reorder levels (NEW)
-    reorder_level = Column(Numeric(15, 3))
-    reorder_quantity = Column(Numeric(15, 3))
-    maximum_stock_level = Column(Numeric(15, 3))
-    
-    # Serial number tracking (NEW)
-    track_serial_numbers = Column(Boolean, default=False)
-    
-    # Default discount (NEW)
-    default_discount_percent = Column(Numeric(5, 2), default=0)
-    
-    is_active = Column(Boolean, default=True)
+    name = Column(String(191), nullable=False, index=True)
+    item_group = Column(String(200), default="single")
+    hsn = Column(String(50), nullable=True)
+    barcode = Column(String(100), nullable=True, index=True)
+    brand = Column(String(100), nullable=True)
+    unit = Column(String(50), nullable=True)
+    alert_quantity = Column(Integer, default=0)
+    category = Column(String(100), nullable=True)
+    description = Column(Text, nullable=True)
+    discount_type = Column(discount_type_enum, default='percentage')
+    discount = Column(Numeric(15, 2), default=0.00)
+    price = Column(Numeric(15, 2), default=0.00)
+    tax_type = Column(String(100), nullable=True)
+    mrp = Column(Numeric(15, 2), default=0.00)
+    company_id = Column(String(36), ForeignKey("companies.id"), nullable=False, index=True)
+    tax_id = Column(String(36), ForeignKey("taxes.id"), nullable=True, index=True)  # Change from In
+    profit_margin = Column(Numeric(8, 2), default=0.00)
+    sku = Column(String(100), nullable=True, index=True)
+    seller_points = Column(Integer, default=0)
+    purchase_price = Column(Numeric(15, 2), default=0.00)
+    sales_price = Column(Numeric(15, 2), default=0.00)
+    opening_stock = Column(Integer, default=0)
+    quantity = Column(Integer, default=0)
+    image = Column(String(191), nullable=True)
+    additional_image = Column(String(191), nullable=True)
+    created_by = Column(String(36), ForeignKey("users.id"), nullable=False, index=True) 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
+    deleted_at = Column(DateTime, nullable=True)
+    
     # Relationships
-    company = relationship("Company", back_populates="products")
-    stock_group = relationship("StockGroup", back_populates="items")
-    stock_entries = relationship("StockEntry", back_populates="product", foreign_keys="[StockEntry.product_id]")
-    batches = relationship("Batch", back_populates="product")
-    bom_components = relationship("BOMComponent", back_populates="component_product", foreign_keys="BOMComponent.component_item_id")
-
-    __table_args__ = (
-        Index("idx_product_company", "company_id"),
-        Index("idx_product_hsn", "hsn_code"),
-        Index("idx_product_sku", "company_id", "sku"),
-    )
-
+    company = relationship("Company", back_populates="items")
+    tax = relationship("Tax", back_populates="items")
+    creator = relationship("User", back_populates="items")
+    
     def __repr__(self):
-        return f"<Product {self.name}>"
+        return f"<Item(id={self.id}, name='{self.name}', sku='{self.sku}')>"
+
 
 
 class AlternativeProduct(Base):
@@ -728,7 +753,7 @@ class ProductAlternativeMapping(Base):
     __tablename__ = "product_alternative_mappings"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    product_id = Column(String(36), ForeignKey("products.id", ondelete="CASCADE"), nullable=False)
+    product_id = Column(String(36), ForeignKey("items.id", ondelete="CASCADE"), nullable=False)
     alternative_product_id = Column(String(36), ForeignKey("alternative_products.id", ondelete="CASCADE"), nullable=False)
     
     # Mapping details
@@ -771,8 +796,8 @@ class Invoice(Base):
     due_date = Column(DateTime)
     
     # Invoice type for GST
-    invoice_type = Column(Enum(InvoiceType), default=InvoiceType.B2C)
-    
+    invoice_type = Column(Enum(InvoiceType, name='invoice_type_enum'), default=InvoiceType.B2C)
+ 
     # Place of supply (State code for GST)
     place_of_supply = Column(String(2))  # State code
     place_of_supply_name = Column(String(100))
@@ -799,8 +824,7 @@ class Invoice(Base):
     outstanding_amount = Column(Numeric(14, 2), default=0)  # NEW: For bill-wise tracking
     
     # Status
-    status = Column(Enum(InvoiceStatus), default=InvoiceStatus.DRAFT)
-    
+    status = Column(Enum(InvoiceStatus, name='invoice_status_enum'), default=InvoiceStatus.DRAFT)
     # Payment link
     payment_link = Column(String(500))
     upi_qr_data = Column(Text)  # UPI QR code data
@@ -847,7 +871,7 @@ class InvoiceItem(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     invoice_id = Column(String(36), ForeignKey("invoices.id", ondelete="CASCADE"), nullable=False)
-    product_id = Column(String(36), ForeignKey("products.id", ondelete="SET NULL"))
+    product_id = Column(String(36), ForeignKey("items.id", ondelete="SET NULL"))
     
     # Item details
     description = Column(String(500), nullable=False)
@@ -905,8 +929,7 @@ class Payment(Base):
     # Payment details
     amount = Column(Numeric(14, 2), nullable=False)
     payment_date = Column(DateTime, nullable=False, default=datetime.utcnow)
-    payment_mode = Column(Enum(PaymentMode), default=PaymentMode.UPI)
-    
+    payment_mode = Column(Enum(PaymentMode, name='payment_mode_enum'), default=PaymentMode.UPI)
     # Reference
     reference_number = Column(String(100))  # Transaction ID, Cheque number, etc.
     upi_transaction_id = Column(String(100))
@@ -980,8 +1003,7 @@ class Account(Base):
     description = Column(Text)
     
     # Account type
-    account_type = Column(Enum(AccountType), nullable=False)
-    
+    account_type = Column(Enum(AccountType, name='account_type_enum'), nullable=False)
     # Hierarchy (for sub-accounts)
     parent_id = Column(String(36), ForeignKey("accounts.id", ondelete="SET NULL"))
     
@@ -1026,8 +1048,8 @@ class Transaction(Base):
     transaction_date = Column(DateTime, nullable=False, default=datetime.utcnow)
     
     # Voucher type (Tally-style)
-    voucher_type = Column(Enum(VoucherType), default=VoucherType.JOURNAL)
-    
+    voucher_type = Column(Enum(VoucherType, name='voucher_type_enum'), default=VoucherType.JOURNAL)
+
     # Description
     description = Column(Text)
     
@@ -1036,12 +1058,11 @@ class Transaction(Base):
     party_type = Column(String(20))  # 'customer' or 'vendor'
     
     # Reference to source document
-    reference_type = Column(Enum(ReferenceType), default=ReferenceType.MANUAL)
+    reference_type = Column(Enum(ReferenceType, name='reference_type_enum'), default=ReferenceType.MANUAL)
     reference_id = Column(String(36))  # ID of invoice, payment, etc.
     
     # Status
-    status = Column(Enum(TransactionStatus), default=TransactionStatus.DRAFT)
-    
+    status = Column(Enum(TransactionStatus, name='transaction_status_enum'), default=TransactionStatus.DRAFT)
     # Reconciliation
     is_reconciled = Column(Boolean, default=False)
     reconciled_at = Column(DateTime)
@@ -1276,7 +1297,7 @@ class Batch(Base):
     __tablename__ = "batches"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    product_id = Column(String(36), ForeignKey("products.id", ondelete="CASCADE"), nullable=False)  # Changed from stock_item_id
+    product_id = Column(String(36), ForeignKey("items.id", ondelete="CASCADE"), nullable=False)  # Changed from stock_item_id
     
     batch_number = Column(String(100), nullable=False)
     manufacturing_date = Column(DateTime)
@@ -1304,7 +1325,7 @@ class StockEntry(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     company_id = Column(String(36), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
-    product_id = Column(String(36), ForeignKey("products.id", ondelete="CASCADE"), nullable=False)  # Changed from stock_item_id
+    product_id = Column(String(36), ForeignKey("items.id", ondelete="CASCADE"), nullable=False)  # Changed from stock_item_id
     godown_id = Column(String(36), ForeignKey("godowns.id", ondelete="SET NULL"))
     batch_id = Column(String(36), ForeignKey("batches.id", ondelete="SET NULL"))
     
@@ -1352,7 +1373,7 @@ class BillOfMaterial(Base):
     company_id = Column(String(36), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
     
     # Finished product
-    finished_item_id = Column(String(36), ForeignKey("products.id", ondelete="CASCADE"), nullable=False)  # Changed from stock_items
+    finished_item_id = Column(String(36), ForeignKey("items.id", ondelete="CASCADE"), nullable=False)  # Changed from stock_items
     
     name = Column(String(255), nullable=False)
     description = Column(Text)
@@ -1380,7 +1401,7 @@ class BOMComponent(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     bom_id = Column(String(36), ForeignKey("bills_of_material.id", ondelete="CASCADE"), nullable=False)
-    component_item_id = Column(String(36), ForeignKey("products.id", ondelete="CASCADE"), nullable=False)  # Changed from stock_items
+    component_item_id = Column(String(36), ForeignKey("items.id", ondelete="CASCADE"), nullable=False)  # Changed from stock_items
     
     quantity = Column(Numeric(14, 3), nullable=False)
     unit = Column(String(20))
@@ -1463,7 +1484,7 @@ class SalesOrderItem(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     order_id = Column(String(36), ForeignKey("sales_orders.id", ondelete="CASCADE"), nullable=False)
-    product_id = Column(String(36), ForeignKey("products.id", ondelete="SET NULL"))  # Removed stock_item_id
+    product_id = Column(String(36), ForeignKey("items.id", ondelete="SET NULL"))  # Removed stock_item_id
     
     description = Column(String(500), nullable=False)
     quantity = Column(Numeric(14, 3), nullable=False)
@@ -1541,7 +1562,7 @@ class PurchaseOrderItem(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     order_id = Column(String(36), ForeignKey("purchase_orders.id", ondelete="CASCADE"), nullable=False)
-    product_id = Column(String(36), ForeignKey("products.id", ondelete="SET NULL"))  # Changed from stock_item_id
+    product_id = Column(String(36), ForeignKey("items.id", ondelete="SET NULL"))  # Changed from stock_item_id
     
     description = Column(String(500), nullable=False)
     quantity = Column(Numeric(14, 3), nullable=False)
@@ -1615,7 +1636,7 @@ class DeliveryNoteItem(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     delivery_note_id = Column(String(36), ForeignKey("delivery_notes.id", ondelete="CASCADE"), nullable=False)
-    product_id = Column(String(36), ForeignKey("products.id", ondelete="SET NULL"))  # Changed from stock_item_id
+    product_id = Column(String(36), ForeignKey("items.id", ondelete="SET NULL"))  # Changed from stock_item_id
     batch_id = Column(String(36), ForeignKey("batches.id", ondelete="SET NULL"))
     
     description = Column(String(500), nullable=False)
@@ -1676,7 +1697,7 @@ class ReceiptNoteItem(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     receipt_note_id = Column(String(36), ForeignKey("receipt_notes.id", ondelete="CASCADE"), nullable=False)
-    product_id = Column(String(36), ForeignKey("products.id", ondelete="SET NULL"))  # Changed from stock_item_id
+    product_id = Column(String(36), ForeignKey("items.id", ondelete="SET NULL"))  # Changed from stock_item_id
     batch_id = Column(String(36), ForeignKey("batches.id", ondelete="SET NULL"))
     
     description = Column(String(500), nullable=False)
@@ -1903,7 +1924,7 @@ class PurchaseInvoiceItem(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     purchase_invoice_id = Column(String(36), ForeignKey("purchase_invoices.id", ondelete="CASCADE"), nullable=False)
-    product_id = Column(String(36), ForeignKey("products.id", ondelete="SET NULL"))
+    product_id = Column(String(36), ForeignKey("items.id", ondelete="SET NULL"))
     
     # Item details
     description = Column(String(500), nullable=False)
@@ -2060,7 +2081,7 @@ class ProductUnit(Base):
     __tablename__ = "product_units"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    product_id = Column(String(36), ForeignKey("products.id", ondelete="CASCADE"), nullable=False)
+    product_id = Column(String(36), ForeignKey("items.id", ondelete="CASCADE"), nullable=False)
     
     unit_name = Column(String(50), nullable=False)  # Box, Carton, Dozen
     symbol = Column(String(20))  # BOX, CTN, DZ
@@ -2108,7 +2129,7 @@ class ProductPrice(Base):
     __tablename__ = "product_prices"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    product_id = Column(String(36), ForeignKey("products.id", ondelete="CASCADE"), nullable=False)
+    product_id = Column(String(36), ForeignKey("items.id", ondelete="CASCADE"), nullable=False)
     price_level_id = Column(String(36), ForeignKey("price_levels.id", ondelete="CASCADE"), nullable=False)
     
     price = Column(Numeric(15, 2), nullable=False)
@@ -2138,12 +2159,12 @@ class SerialNumberStatus(str, PyEnum):
 
 
 class SerialNumber(Base):
-    """Serial/IMEI number tracking for products."""
+    """Serial/IMEI number tracking for items."""
     __tablename__ = "serial_numbers"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     company_id = Column(String(36), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
-    product_id = Column(String(36), ForeignKey("products.id", ondelete="CASCADE"), nullable=False)
+    product_id = Column(String(36), ForeignKey("items.id", ondelete="CASCADE"), nullable=False)
     
     serial_number = Column(String(100), nullable=False)
     batch_id = Column(String(36), ForeignKey("batches.id", ondelete="SET NULL"))
@@ -2234,7 +2255,7 @@ class StockAdjustmentItem(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     adjustment_id = Column(String(36), ForeignKey("stock_adjustments.id", ondelete="CASCADE"), nullable=False)
-    product_id = Column(String(36), ForeignKey("products.id", ondelete="CASCADE"), nullable=False)
+    product_id = Column(String(36), ForeignKey("items.id", ondelete="CASCADE"), nullable=False)
     batch_id = Column(String(36), ForeignKey("batches.id", ondelete="SET NULL"))
     
     # Quantities
@@ -2279,7 +2300,7 @@ class DiscountRule(Base):
     
     # Applicability
     applies_to = Column(String(20), default="all")  # all, product, category, customer
-    product_id = Column(String(36), ForeignKey("products.id", ondelete="CASCADE"))
+    product_id = Column(String(36), ForeignKey("items.id", ondelete="CASCADE"))
     stock_group_id = Column(String(36), ForeignKey("stock_groups.id", ondelete="CASCADE"))
     customer_id = Column(String(36), ForeignKey("customers.id", ondelete="CASCADE"))
     price_level_id = Column(String(36), ForeignKey("price_levels.id", ondelete="CASCADE"))
@@ -2339,7 +2360,7 @@ class ManufacturingOrder(Base):
     bom_id = Column(String(36), ForeignKey("bills_of_material.id", ondelete="SET NULL"))
     
     # Finished product
-    finished_product_id = Column(String(36), ForeignKey("products.id", ondelete="CASCADE"), nullable=False)
+    finished_product_id = Column(String(36), ForeignKey("items.id", ondelete="CASCADE"), nullable=False)
     planned_quantity = Column(Numeric(14, 3), nullable=False)
     produced_quantity = Column(Numeric(14, 3), default=0)
     
@@ -2381,7 +2402,7 @@ class ManufacturingConsumption(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     order_id = Column(String(36), ForeignKey("manufacturing_orders.id", ondelete="CASCADE"), nullable=False)
-    product_id = Column(String(36), ForeignKey("products.id", ondelete="CASCADE"), nullable=False)
+    product_id = Column(String(36), ForeignKey("items.id", ondelete="CASCADE"), nullable=False)
     batch_id = Column(String(36), ForeignKey("batches.id", ondelete="SET NULL"))
     godown_id = Column(String(36), ForeignKey("godowns.id", ondelete="SET NULL"))
     
@@ -2406,7 +2427,7 @@ class ManufacturingByproduct(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     order_id = Column(String(36), ForeignKey("manufacturing_orders.id", ondelete="CASCADE"), nullable=False)
-    product_id = Column(String(36), ForeignKey("products.id", ondelete="CASCADE"), nullable=False)
+    product_id = Column(String(36), ForeignKey("items.id", ondelete="CASCADE"), nullable=False)
     godown_id = Column(String(36), ForeignKey("godowns.id", ondelete="SET NULL"))
     
     quantity = Column(Numeric(14, 3), nullable=False)
@@ -3294,7 +3315,7 @@ class QuotationItem(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     quotation_id = Column(String(36), ForeignKey("quotations.id", ondelete="CASCADE"), nullable=False)
-    product_id = Column(String(36), ForeignKey("products.id", ondelete="SET NULL"))
+    product_id = Column(String(36), ForeignKey("items.id", ondelete="SET NULL"))
     
     # Item details
     description = Column(String(500), nullable=False)
@@ -3467,7 +3488,7 @@ class DeliveryChallanItem(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     delivery_challan_id = Column(String(36), ForeignKey("delivery_challans.id", ondelete="CASCADE"), nullable=False)
-    product_id = Column(String(36), ForeignKey("products.id", ondelete="SET NULL"))
+    product_id = Column(String(36), ForeignKey("items.id", ondelete="SET NULL"))
     batch_id = Column(String(36), ForeignKey("batches.id", ondelete="SET NULL"))
     
     # Invoice item reference (if created from invoice)
