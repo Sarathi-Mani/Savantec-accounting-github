@@ -599,45 +599,39 @@ class Customer(Base):
     
     # Customer details
     name = Column(String(255), nullable=False)
-    trade_name = Column(String(255))
-    gstin = Column(String(15), index=True)  # Customer's GSTIN (for B2B)
-    pan = Column(String(10))
-    
-    # Contact
+    contact = Column(String(20), nullable=False)  # Primary contact
     email = Column(String(255))
-    phone = Column(String(20))
-    contact_person = Column(String(255))
+    mobile = Column(String(20))  # Additional mobile
+    
+    # Tax Information
+    tax_number = Column(String(15), index=True)  # GST Number
+    gst_registration_type = Column(String(50))  # GST Registration Type
+    pan_number = Column(String(10))  # PAN Number
+    
+    # Company/Vendor Information
+    vendor_code = Column(String(50))
+    
+    # Financial Information
+    opening_balance = Column(Numeric(15, 2), default=0)
+    opening_balance_type = Column(String(20), default="outstanding")  # outstanding or advance
+    credit_limit = Column(Numeric(15, 2))
+    credit_days = Column(Integer, default=0)
     
     # Billing Address
-    billing_address_line1 = Column(String(255))
-    billing_address_line2 = Column(String(255))
+    billing_address = Column(Text)
     billing_city = Column(String(100))
     billing_state = Column(String(100))
-    billing_state_code = Column(String(2))
-    billing_pincode = Column(String(10))
     billing_country = Column(String(100), default="India")
+    billing_zip = Column(String(10))
     
-    # Shipping Address (if different)
-    shipping_address_line1 = Column(String(255))
-    shipping_address_line2 = Column(String(255))
+    # Shipping Address
+    shipping_address = Column(Text)
     shipping_city = Column(String(100))
     shipping_state = Column(String(100))
-    shipping_state_code = Column(String(2))
-    shipping_pincode = Column(String(10))
     shipping_country = Column(String(100), default="India")
+    shipping_zip = Column(String(10))
     
-    # Customer type
-    customer_type = Column(String(20), default="b2c")  # b2b, b2c, export
-    
-    # Credit management (NEW)
-    credit_limit = Column(Numeric(15, 2))
-    credit_days = Column(Integer, default=30)
-    block_on_credit_exceed = Column(Boolean, default=False)
-    price_level_id = Column(String(36), ForeignKey("price_levels.id", ondelete="SET NULL"))
-    
-    # Interest on overdue (NEW)
-    interest_rate = Column(Numeric(5, 2))  # Annual interest rate %
-    
+    # Additional flags
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -645,17 +639,16 @@ class Customer(Base):
     # Relationships
     company = relationship("Company", back_populates="customers")
     invoices = relationship("Invoice", back_populates="customer")
-    price_level = relationship("PriceLevel")
     contacts = relationship("Contact", back_populates="customer", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("idx_customer_company", "company_id"),
+        Index("idx_customer_tax", "tax_number"),
+        Index("idx_customer_vendor", "vendor_code"),
     )
 
     def __repr__(self):
         return f"<Customer {self.name}>"
-
-
 class Product(Base):
     """Product/Service model - Unified product with inventory tracking."""
     __tablename__ = "items"
@@ -3684,8 +3677,10 @@ class Contact(Base):
     __tablename__ = "contacts"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    company_id = Column(String(36), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
     customer_id = Column(String(36), ForeignKey("customers.id", ondelete="CASCADE"), nullable=False)
+    
+    # ADD THE MISSING company_id COLUMN
+    company_id = Column(String(36), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
     
     # Contact details
     name = Column(String(255), nullable=False)
@@ -3699,7 +3694,6 @@ class Contact(Base):
     
     # Primary contact flag
     is_primary = Column(Boolean, default=False)
-    is_decision_maker = Column(Boolean, default=False)
     
     # Notes
     notes = Column(Text)
@@ -3709,18 +3703,17 @@ class Contact(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    company = relationship("Company")
     customer = relationship("Customer", back_populates="contacts")
+    company = relationship("Company")  # This relationship should exist
 
     __table_args__ = (
-        Index("idx_contact_company", "company_id"),
+        # REMOVE OR FIX THIS INDEX - it's referencing company_id which wasn't defined
+        # Index("idx_contact_company", "company_id"),
         Index("idx_contact_customer", "customer_id"),
     )
 
     def __repr__(self):
         return f"<Contact {self.name}>"
-
-
 class EnquirySource(str, PyEnum):
     """Enquiry source enumeration."""
     WEBSITE = "website"
