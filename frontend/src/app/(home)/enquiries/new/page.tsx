@@ -1,16 +1,19 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
-import { companiesApi, productsApi, getErrorMessage } from "@/services/api";
+import { customersApi, productsApi, getErrorMessage } from "@/services/api";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:6768";
 
-interface Company {
+interface Customer {
   id: string;
   name: string;
+  email?: string;
+  phone?: string;
+  contact_person?: string;
 }
 
 interface Product {
@@ -19,6 +22,13 @@ interface Product {
   description?: string;
   sku?: string;
   image?: string;
+}
+
+interface Employee {
+  id: string;
+  first_name: string;
+  last_name: string;
+  email?: string;
 }
 
 interface EnquiryItem {
@@ -30,12 +40,30 @@ interface EnquiryItem {
 }
 
 export default function NewEnquiryPage() {
-  const { company } = useAuth();
+  const { company, user } = useAuth();
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [companies, setCompanies] = useState<Company[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [filteredCustomers, setFilteredCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [filteredProducts, setFilteredProducts] = useState<Product[][]>([]); // Changed to array of arrays
+  const [employees, setEmployees] = useState<Employee[]>([
+    { id: "1", first_name: "Sales", last_name: "Person 1" },
+    { id: "2", first_name: "Sales", last_name: "Person 2" },
+  ]);
+  const [filteredEmployees, setFilteredEmployees] = useState<Employee[]>([
+    { id: "1", first_name: "Sales", last_name: "Person 1" },
+    { id: "2", first_name: "Sales", last_name: "Person 2" },
+  ]);
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
+  const [showProductDropdowns, setShowProductDropdowns] = useState<boolean[]>([]);
+  const [showSalesmanDropdown, setShowSalesmanDropdown] = useState(false);
+  
+  const customerSearchRef = useRef<HTMLDivElement>(null);
+  const productSearchRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const salesmanSearchRef = useRef<HTMLDivElement>(null);
+
   const [enquiryItems, setEnquiryItems] = useState<EnquiryItem[]>([
     {
       product_id: "",
@@ -48,14 +76,38 @@ export default function NewEnquiryPage() {
   const [formData, setFormData] = useState({
     enquiry_no: "",
     enquiry_date: new Date().toISOString().split("T")[0],
-    company_id: "",
+    customer_id: "",
+    customer_search: "",
     kind_attn: "",
     mail_id: "",
     phone_no: "",
     remarks: "",
-    salesman_id: "", // Will be set based on user role
+    salesman_id: "",
+    salesman_search: "",
     status: "pending",
   });
+
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (customerSearchRef.current && !customerSearchRef.current.contains(event.target as Node)) {
+        setShowCustomerDropdown(false);
+      }
+      if (salesmanSearchRef.current && !salesmanSearchRef.current.contains(event.target as Node)) {
+        setShowSalesmanDropdown(false);
+      }
+      productSearchRefs.current.forEach((ref, index) => {
+        if (ref && !ref.contains(event.target as Node) && showProductDropdowns[index]) {
+          const newShowDropdowns = [...showProductDropdowns];
+          newShowDropdowns[index] = false;
+          setShowProductDropdowns(newShowDropdowns);
+        }
+      });
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showProductDropdowns]);
 
   useEffect(() => {
     // Generate suggested enquiry number
@@ -65,39 +117,253 @@ export default function NewEnquiryPage() {
     setFormData((prev) => ({ ...prev, enquiry_no: suggestedNumber }));
     
     // Fetch data
-    fetchCompanies();
     if (company?.id) {
+      fetchCustomers();
       fetchProducts();
     }
+    
+    // Initialize showProductDropdowns array
+    setShowProductDropdowns([false]);
+    // Initialize filteredProducts with all products for first item
+    setFilteredProducts([products]);
   }, [company?.id]);
 
-  const fetchCompanies = async () => {
-    try {
-      console.log("Fetching companies...");
-      const data = await companiesApi.list();
-      console.log("Companies data:", data);
-      setCompanies(data || []);
-    } catch (err: any) {
-      console.error("Failed to fetch companies:", err);
-      setError(getErrorMessage(err, "Failed to load companies"));
-    }
-  };
-
-  const fetchProducts = async () => {
-    if (!company?.id) return;
+const fetchCustomers = async () => {
+  if (!company?.id) return;
+  
+  try {
+    console.log("Fetching customers for company:", company.id);
     
-    try {
-      console.log("Fetching products for company:", company.id);
-      const response = await productsApi.list(company.id, { page_size: 100 });
-      console.log("Products response:", response);
-      setProducts(response.products || []);
-    } catch (err: any) {
-      console.error("Failed to fetch products:", err);
-      setError(getErrorMessage(err, "Failed to load products"));
+    const token = localStorage.getItem("access_token");
+    const url = `${API_BASE}/companies/${company.id}/customers?page=1&page_size=100`;
+    console.log("Full URL:", url);
+    
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    console.log("Response status:", response.status);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("Server error:", errorText);
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
-  };
+    
+    const data = await response.json();
+    
+    // Detailed logging of response structure
+    console.log("=== CUSTOMERS API RESPONSE STRUCTURE ===");
+    console.log("Full response:", JSON.stringify(data, null, 2));
+    console.log("Type of data:", typeof data);
+    console.log("Keys in data:", Object.keys(data));
+    
+    // Check if it's an array
+    if (Array.isArray(data)) {
+      console.log("✅ Response is an array with", data.length, "items");
+      setCustomers(data);
+      setFilteredCustomers(data);
+      return;
+    }
+    
+    // Check common response structures
+    const possibleArrayKeys = ['customers', 'items', 'data', 'results', 'list'];
+    
+    for (const key of possibleArrayKeys) {
+      if (data[key] && Array.isArray(data[key])) {
+        console.log(`✅ Found array in key '${key}' with ${data[key].length} items`);
+        console.log("First few items:", data[key].slice(0, 3));
+        setCustomers(data[key]);
+        setFilteredCustomers(data[key]);
+        return;
+      }
+    }
+    
+    // If no array found, check all keys
+    console.log("🔍 Searching for any array in response...");
+    for (const key in data) {
+      if (Array.isArray(data[key])) {
+        console.log(`✅ Found array in key '${key}' with ${data[key].length} items`);
+        setCustomers(data[key]);
+        setFilteredCustomers(data[key]);
+        return;
+      }
+    }
+    
+    console.warn("❌ No array found in response. Full data:", data);
+    setCustomers([]);
+    setFilteredCustomers([]);
+    
+  } catch (err: any) {
+    console.error("❌ Failed to fetch customers:", err);
+    setError(`Failed to load customers: ${err.message}`);
+    
+    // Use fallback data for testing
+    const fallbackCustomers = [
+      { id: "1", name: "Test Customer 1", email: "test1@example.com", phone: "1234567890", contact_person: "John Doe" },
+      { id: "2", name: "Test Customer 2", email: "test2@example.com", phone: "0987654321", contact_person: "Jane Smith" },
+      { id: "3", name: "Demo Company", email: "demo@example.com", phone: "5555555555", contact_person: "Alex Johnson" }
+    ];
+    
+    console.log("Using fallback customers for testing");
+    setCustomers(fallbackCustomers);
+    setFilteredCustomers(fallbackCustomers);
+  }
+};
+  const fetchProducts = async () => {
+  if (!company?.id) return;
+  
+  try {
+    console.log("Fetching products for company:", company.id);
+    
+    // Use direct fetch to debug
+    const token = localStorage.getItem("access_token");
+    const url = `${API_BASE}/companies/${company.id}/products?page_size=100`;
+    console.log("Products URL:", url);
+    
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    console.log("Products response status:", response.status);
+    
+    if (!response.ok) {
+      console.warn("Products API failed, using fallback data");
+      throw new Error(`HTTP ${response.status}: Products endpoint might not exist`);
+    }
+    
+    const data = await response.json();
+    console.log("Products response:", data);
+    
+    // Handle products response
+    let productsList = [];
+    
+    if (Array.isArray(data)) {
+      productsList = data;
+    } else if (data.products && Array.isArray(data.products)) {
+      productsList = data.products;
+    } else if (data.items && Array.isArray(data.items)) {
+      productsList = data.items;
+    } else if (data.data && Array.isArray(data.data)) {
+      productsList = data.data;
+    }
+    
+    console.log("Products loaded:", productsList.length);
+    setProducts(productsList);
+    setFilteredProducts([productsList]);
+    
+  } catch (err: any) {
+    console.error("Failed to fetch products:", err);
+    
+    // Use fallback products
+    const fallbackProducts = [
+      {
+        id: "1",
+        name: "Product A",
+        description: "Sample product A description",
+        sku: "PROD-A-001",
+        image: "https://via.placeholder.com/150"
+      },
+      {
+        id: "2", 
+        name: "Product B",
+        description: "Sample product B description",
+        sku: "PROD-B-002",
+        image: "https://via.placeholder.com/150"
+      },
+      {
+        id: "3",
+        name: "Product C",
+        description: "Sample product C description",
+        sku: "PROD-C-003",
+        image: "https://via.placeholder.com/150"
+      }
+    ];
+    
+    console.log("Using fallback products");
+    setProducts(fallbackProducts);
+    setFilteredProducts([fallbackProducts]);
+  }
+};
 
-  const addItem = () => {
+const filterCustomers = useCallback((searchTerm: string) => {
+  if (!customers.length) {
+    console.log("No customers to filter");
+    return;
+  }
+  
+  const filtered = customers.filter(customer =>
+    customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    customer.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    customer.contact_person?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+  
+  console.log(`Filtered ${customers.length} customers to ${filtered.length}`);
+  setFilteredCustomers(filtered);
+}, [customers]);
+  const filterProducts = useCallback((searchTerm: string, index: number) => {
+    const filtered = products.filter(product =>
+      product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      product.sku?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      product.description?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+    const newFilteredProducts = [...filteredProducts];
+    newFilteredProducts[index] = filtered;
+    setFilteredProducts(newFilteredProducts);
+  }, [products, filteredProducts]);
+
+  const filterEmployees = useCallback((searchTerm: string) => {
+    const filtered = employees.filter(employee =>
+      `${employee.first_name} ${employee.last_name}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      employee.email?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+    setFilteredEmployees(filtered);
+  }, [employees]);
+
+  const selectCustomer = useCallback((customer: Customer) => {
+  console.log("Selected customer:", customer);
+  setFormData({
+    ...formData,
+    customer_id: customer.id,
+    customer_search: customer.name,
+    kind_attn: customer.contact_person || "",
+    mail_id: customer.email || "",
+    phone_no: customer.phone || "",
+  });
+  setShowCustomerDropdown(false);
+}, [formData]);
+
+  const selectProduct = useCallback((product: Product, index: number) => {
+    const updated = [...enquiryItems];
+    updated[index] = {
+      ...updated[index],
+      product_id: product.id,
+      description: product.description || product.name,
+      existing_image_url: product.image || undefined,
+    };
+    setEnquiryItems(updated);
+    
+    const newShowDropdowns = [...showProductDropdowns];
+    newShowDropdowns[index] = false;
+    setShowProductDropdowns(newShowDropdowns);
+  }, [enquiryItems, showProductDropdowns]);
+
+  const selectSalesman = useCallback((employee: Employee) => {
+    setFormData({
+      ...formData,
+      salesman_id: employee.id,
+      salesman_search: `${employee.first_name} ${employee.last_name}`,
+    });
+    setShowSalesmanDropdown(false);
+  }, [formData]);
+
+  const addItem = useCallback(() => {
     setEnquiryItems([
       ...enquiryItems,
       {
@@ -107,17 +373,23 @@ export default function NewEnquiryPage() {
         image: null,
       },
     ]);
-  };
+    setShowProductDropdowns([...showProductDropdowns, false]);
+    setFilteredProducts([...filteredProducts, products]);
+  }, [enquiryItems, showProductDropdowns, filteredProducts, products]);
 
-  const removeItem = (index: number) => {
+  const removeItem = useCallback((index: number) => {
     if (enquiryItems.length <= 1) {
       alert("At least one item is required.");
       return;
     }
     setEnquiryItems(enquiryItems.filter((_, i) => i !== index));
-  };
+    const newShowDropdowns = showProductDropdowns.filter((_, i) => i !== index);
+    setShowProductDropdowns(newShowDropdowns);
+    const newFilteredProducts = filteredProducts.filter((_, i) => i !== index);
+    setFilteredProducts(newFilteredProducts);
+  }, [enquiryItems, showProductDropdowns, filteredProducts]);
 
-  const updateItem = (index: number, field: keyof EnquiryItem, value: string | number | File | null) => {
+  const updateItem = useCallback((index: number, field: keyof EnquiryItem, value: string | number | File | null) => {
     const updated = [...enquiryItems];
     
     if (field === "product_id") {
@@ -132,15 +404,15 @@ export default function NewEnquiryPage() {
       updated[index] = { ...updated[index], [field]: value };
     }
     setEnquiryItems(updated);
-  };
+  }, [enquiryItems, products]);
 
-  const handleImageUpload = (index: number, file: File) => {
+  const handleImageUpload = useCallback((index: number, file: File) => {
     updateItem(index, "image", file);
-  };
+  }, [updateItem]);
 
-  const removeUploadedImage = (index: number) => {
+  const removeUploadedImage = useCallback((index: number) => {
     updateItem(index, "image", null);
-  };
+  }, [updateItem]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -148,8 +420,8 @@ export default function NewEnquiryPage() {
     setError("");
 
     // Validate form
-    if (!formData.company_id) {
-      setError("Please select a company.");
+    if (!formData.customer_id) {
+      setError("Please select a customer.");
       setLoading(false);
       return;
     }
@@ -187,78 +459,81 @@ export default function NewEnquiryPage() {
       return;
     }
 
-   try {
-    const token = localStorage.getItem("access_token");
-    if (!token) {
-      setError("Authentication required. Please login again.");
-      setLoading(false);
-      return;
-    }
-
-    const formDataToSend = new FormData();
-    
-    // Append basic form data (match the form field names in the API)
-    formDataToSend.append("enquiry_no", formData.enquiry_no);
-    formDataToSend.append("enquiry_date", formData.enquiry_date);
-    formDataToSend.append("company_id_form", formData.company_id); // Note: changed from company_id
-    formDataToSend.append("kind_attn", formData.kind_attn || "");
-    formDataToSend.append("mail_id", formData.mail_id || "");
-    formDataToSend.append("phone_no", formData.phone_no || "");
-    formDataToSend.append("remarks", formData.remarks || "");
-    formDataToSend.append("salesman_id", formData.salesman_id || "");
-    formDataToSend.append("status", formData.status);
-
-    // Prepare items data
-    const itemsData = enquiryItems.map((item, index) => ({
-      product_id: item.product_id || "",
-      description: item.description,
-      quantity: item.quantity,
-      notes: `Item ${index + 1}`,
-      // Include product name for reference
-      product_name: products.find(p => p.id === item.product_id)?.name || ""
-    }));
-    formDataToSend.append("items", JSON.stringify(itemsData));
-
-    // Append image files
-    enquiryItems.forEach((item, index) => {
-      if (item.image) {
-        formDataToSend.append("files", item.image);
+    try {
+      const token = localStorage.getItem("access_token");
+      if (!token) {
+        setError("Authentication required. Please login again.");
+        setLoading(false);
+        return;
       }
-    });
 
-    // Use the new formdata endpoint
-    const response = await fetch(
-      `${API_BASE}/api/companies/${company?.id}/enquiries/formdata`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          // Don't set Content-Type - let browser set it with boundary
-        },
-        body: formDataToSend,
+      const formDataToSend = new FormData();
+      
+      // Append basic form data (match the form field names in the API)
+      formDataToSend.append("enquiry_no", formData.enquiry_no);
+      formDataToSend.append("enquiry_date", formData.enquiry_date);
+      formDataToSend.append("company_id_form", formData.customer_id);
+      formDataToSend.append("kind_attn", formData.kind_attn || "");
+      formDataToSend.append("mail_id", formData.mail_id || "");
+      formDataToSend.append("phone_no", formData.phone_no || "");
+      formDataToSend.append("remarks", formData.remarks || "");
+      formDataToSend.append("salesman_id", formData.salesman_id || "");
+      formDataToSend.append("status", formData.status);
+
+      // Prepare items data
+      const itemsData = enquiryItems.map((item, index) => ({
+        product_id: item.product_id || null,
+        description: item.description,
+        quantity: item.quantity,
+        notes: `Item ${index + 1}`,
+        product_name: products.find(p => p.id === item.product_id)?.name || ""
+      }));
+      formDataToSend.append("items", JSON.stringify(itemsData));
+
+      // Append image files
+      enquiryItems.forEach((item, index) => {
+        if (item.image) {
+          formDataToSend.append("files", item.image);
+        }
+      });
+
+      console.log("Sending enquiry to:", `${API_BASE}/companies/${company?.id}/enquiries/formdata`);
+
+      const response = await fetch(
+        `${API_BASE}/companies/${company?.id}/enquiries/formdata`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          body: formDataToSend,
+        }
+      );
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.detail || `Failed to create enquiry (Status: ${response.status})`);
       }
-    );
 
-    if (!response.ok) {
       const data = await response.json();
-      throw new Error(data.detail || `Failed to create enquiry (Status: ${response.status})`);
+      alert("Enquiry created successfully!");
+      router.push(`/enquiries`);
+    } catch (err: any) {
+      console.error("Error creating enquiry:", err);
+      setError(err.message || "Failed to create enquiry.");
+    } finally {
+      setLoading(false);
     }
-
-    const data = await response.json();
-    alert("Enquiry created successfully!");
-    router.push(`/enquiries`);
-  } catch (err: any) {
-    console.error("Error creating enquiry:", err);
-    setError(err.message || "Failed to create enquiry.");
-  } finally {
-    setLoading(false);
-  }
-
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
+
+  // Function to handle ref assignment
+  const setProductSearchRef = useCallback((el: HTMLDivElement | null, index: number) => {
+    productSearchRefs.current[index] = el;
+  }, []);
 
   if (!company) {
     return (
@@ -331,29 +606,68 @@ export default function NewEnquiryPage() {
           </div>
         </div>
 
-        {/* Company Information Section */}
+        {/* Customer Information Section */}
         <div className="bg-white dark:bg-gray-dark rounded-lg shadow p-6">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Company Information</h2>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Customer Information</h2>
           
           <div className="space-y-4">
-            <div>
+            <div ref={customerSearchRef} className="relative">
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Company Name <span className="text-red-500">*</span>
+                Customer Name <span className="text-red-500">*</span>
               </label>
-              <select
-                name="company_id"
-                value={formData.company_id}
-                onChange={handleChange}
-                required
-                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-dark-2 dark:border-dark-3 dark:text-white"
-              >
-                <option value="">Select Company</option>
-                {companies.map((company) => (
-                  <option key={company.id} value={company.id}>
-                    {company.name}
-                  </option>
-                ))}
-              </select>
+              <div className="relative">
+                <input
+                  type="text"
+                  name="customer_search"
+                  value={formData.customer_search}
+                  onChange={(e) => {
+                    setFormData({ ...formData, customer_search: e.target.value });
+                    filterCustomers(e.target.value);
+                    setShowCustomerDropdown(true);
+                  }}
+                  onFocus={() => setShowCustomerDropdown(true)}
+                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-dark-2 dark:border-dark-3 dark:text-white"
+                  placeholder="Search customer..."
+                  required
+                />
+                <input
+                  type="hidden"
+                  name="customer_id"
+                  value={formData.customer_id}
+                />
+                {formData.customer_search && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormData({ ...formData, customer_search: "", customer_id: "" });
+                      setFilteredCustomers(customers);
+                    }}
+                    className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+              
+              {showCustomerDropdown && filteredCustomers.length > 0 && (
+                <div className="absolute z-10 w-full mt-1 bg-white dark:bg-dark-2 border border-gray-300 dark:border-dark-3 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                  {filteredCustomers.map((customer) => (
+                    <div
+                      key={customer.id}
+                      className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-dark-3 cursor-pointer border-b dark:border-dark-3 last:border-b-0"
+                      onClick={() => selectCustomer(customer)}
+                    >
+                      <div className="font-medium text-gray-900 dark:text-white">{customer.name}</div>
+                      {customer.contact_person && (
+                        <div className="text-sm text-gray-600 dark:text-gray-400">Contact: {customer.contact_person}</div>
+                      )}
+                      {customer.email && (
+                        <div className="text-sm text-gray-600 dark:text-gray-400">Email: {customer.email}</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -413,6 +727,63 @@ export default function NewEnquiryPage() {
                 placeholder="Additional remarks..."
               />
             </div>
+
+            <div ref={salesmanSearchRef} className="relative">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Sales Person
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  name="salesman_search"
+                  value={formData.salesman_search}
+                  onChange={(e) => {
+                    setFormData({ ...formData, salesman_search: e.target.value });
+                    filterEmployees(e.target.value);
+                    setShowSalesmanDropdown(true);
+                  }}
+                  onFocus={() => setShowSalesmanDropdown(true)}
+                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-dark-2 dark:border-dark-3 dark:text-white"
+                  placeholder="Search sales person..."
+                />
+                <input
+                  type="hidden"
+                  name="salesman_id"
+                  value={formData.salesman_id}
+                />
+                {formData.salesman_search && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormData({ ...formData, salesman_search: "", salesman_id: "" });
+                      setFilteredEmployees(employees);
+                    }}
+                    className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+              
+              {showSalesmanDropdown && filteredEmployees.length > 0 && (
+                <div className="absolute z-10 w-full mt-1 bg-white dark:bg-dark-2 border border-gray-300 dark:border-dark-3 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                  {filteredEmployees.map((employee) => (
+                    <div
+                      key={employee.id}
+                      className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-dark-3 cursor-pointer border-b dark:border-dark-3 last:border-b-0"
+                      onClick={() => selectSalesman(employee)}
+                    >
+                      <div className="font-medium text-gray-900 dark:text-white">
+                        {employee.first_name} {employee.last_name}
+                      </div>
+                      {employee.email && (
+                        <div className="text-sm text-gray-600 dark:text-gray-400">Email: {employee.email}</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -455,22 +826,72 @@ export default function NewEnquiryPage() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="md:col-span-2">
                     <div className="space-y-4">
-                      <div>
+                      <div 
+                        ref={(el) => setProductSearchRef(el, index)} 
+                        className="relative"
+                      >
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                           Select Product
                         </label>
-                        <select
-                          value={item.product_id}
-                          onChange={(e) => updateItem(index, "product_id", e.target.value)}
-                          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-dark-3 dark:border-dark-3 dark:text-white"
-                        >
-                          <option value="">Select Product</option>
-                          {products.map((product) => (
-                            <option key={product.id} value={product.id}>
-                              {product.name} {product.sku ? `(${product.sku})` : ""}
-                            </option>
-                          ))}
-                        </select>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={products.find(p => p.id === item.product_id)?.name || ""}
+                            onChange={(e) => {
+                              filterProducts(e.target.value, index);
+                              const newShowDropdowns = [...showProductDropdowns];
+                              newShowDropdowns[index] = true;
+                              setShowProductDropdowns(newShowDropdowns);
+                            }}
+                            onFocus={() => {
+                              const newShowDropdowns = [...showProductDropdowns];
+                              newShowDropdowns[index] = true;
+                              setShowProductDropdowns(newShowDropdowns);
+                            }}
+                            className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-dark-3 dark:border-dark-3 dark:text-white"
+                            placeholder="Search product..."
+                          />
+                          {item.product_id && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = [...enquiryItems];
+                                updated[index] = {
+                                  ...updated[index],
+                                  product_id: "",
+                                  description: "",
+                                  existing_image_url: undefined,
+                                };
+                                setEnquiryItems(updated);
+                              }}
+                              className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+                        
+                        {showProductDropdowns[index] && 
+                         filteredProducts[index] && 
+                         filteredProducts[index].length > 0 && (
+                          <div className="absolute z-10 w-full mt-1 bg-white dark:bg-dark-3 border border-gray-300 dark:border-dark-3 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                            {filteredProducts[index].map((product) => (
+                              <div
+                                key={product.id}
+                                className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-dark-2 cursor-pointer border-b dark:border-dark-3 last:border-b-0"
+                                onClick={() => selectProduct(product, index)}
+                              >
+                                <div className="font-medium text-gray-900 dark:text-white">{product.name}</div>
+                                {product.sku && (
+                                  <div className="text-sm text-gray-600 dark:text-gray-400">SKU: {product.sku}</div>
+                                )}
+                                {product.description && (
+                                  <div className="text-sm text-gray-600 dark:text-gray-400 truncate">{product.description}</div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       
                       <div>

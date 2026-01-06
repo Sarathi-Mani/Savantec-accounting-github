@@ -693,7 +693,8 @@ class Product(Base):
     
     # ADD this column if not present
     stock_group_id = Column(String(36), ForeignKey("stock_groups.id", ondelete="SET NULL"), index=True)
-    
+    is_active = Column(Boolean, default=True, index=True)
+
     # Relationships - FIXED
     company = relationship("Company", back_populates="items")
     tax = relationship("Tax", back_populates="items")

@@ -352,9 +352,6 @@ def create_enquiry(
     )
     
     return enrich_enquiry(enquiry, db)
-
-
-# FormData endpoint for frontend compatibility
 @router.post("/enquiries/formdata", response_model=EnquiryResponse)
 async def create_enquiry_formdata(
     company_id: str,
@@ -406,29 +403,26 @@ async def create_enquiry_formdata(
     # Override with provided enquiry number
     enquiry.enquiry_number = enquiry_no
     
-    # Process items
-    for item_data in items_data:
-        item = EnquiryItem(
-            id=os.urandom(16).hex(),
-            enquiry_id=enquiry.id,
-            product_id=item_data.get("product_id"),
-            description=item_data.get("description", ""),
-            quantity=item_data.get("quantity", 1),
-            notes=item_data.get("notes"),
-            created_at=datetime.utcnow()
-        )
-        db.add(item)
+    # Create upload directory
+    upload_dir = Path("uploads") / "enquiries" / enquiry.id
+    upload_dir.mkdir(parents=True, exist_ok=True)
     
-    # Handle file uploads
     uploaded_files = []
-    for file in files:
-        if file.filename:
-            # Create upload directory
-            upload_dir = Path("uploads") / "enquiries" / enquiry.id
-            upload_dir.mkdir(parents=True, exist_ok=True)
+    enquiry_items_list = []
+    
+    # Process items and save images
+    for index, item_data in enumerate(items_data):
+        product_id = item_data.get("product_id")
+        if not product_id or product_id.strip() == "":
+            product_id = None
+        
+        # Get image for this item from files (assuming files are in order)
+        image_url = None
+        if index < len(files) and files[index].filename:
+            file = files[index]
             
             # Generate safe filename
-            safe_filename = file.filename.replace(" ", "_")
+            safe_filename = f"{enquiry.id}_{index}_{file.filename.replace(' ', '_')}"
             file_path = upload_dir / safe_filename
             
             # Save file
@@ -436,15 +430,42 @@ async def create_enquiry_formdata(
             with open(file_path, "wb") as buffer:
                 buffer.write(content)
             
-            uploaded_files.append(f"/uploads/enquiries/{enquiry.id}/{safe_filename}")
+            image_url = f"/uploads/enquiries/{enquiry.id}/{safe_filename}"
+            uploaded_files.append(image_url)
+        
+        # Create enquiry item
+        item = EnquiryItem(
+            id=os.urandom(16).hex(),
+            enquiry_id=enquiry.id,
+            product_id=product_id,
+            description=item_data.get("description", ""),
+            quantity=item_data.get("quantity", 1),
+            image_url=image_url,  # Save image URL here
+            notes=item_data.get("notes"),
+            created_at=datetime.utcnow()
+        )
+        db.add(item)
+        enquiry_items_list.append(item)
     
+    # Update products_interested with item data including image URLs
+    enriched_items_data = []
+    for i, item_data in enumerate(items_data):
+        enriched_item = {
+            "product_id": item_data.get("product_id"),
+            "description": item_data.get("description", ""),
+            "quantity": item_data.get("quantity", 1),
+            "notes": item_data.get("notes"),
+            "image_url": enquiry_items_list[i].image_url if i < len(enquiry_items_list) else None
+        }
+        enriched_items_data.append(enriched_item)
+    
+    enquiry.products_interested = enriched_items_data
+    
+    # Add uploaded files info to notes
     if uploaded_files:
         existing_notes = enquiry.notes or ""
-        enquiry.notes = f"{existing_notes}\n\nFiles uploaded:\n" + "\n".join(uploaded_files)
-    
-    # Update products_interested from items
-    if items_data:
-        enquiry.products_interested = items_data
+        files_list = "\n".join([f"- {url}" for url in uploaded_files])
+        enquiry.notes = existing_notes
     
     db.commit()
     db.refresh(enquiry)
