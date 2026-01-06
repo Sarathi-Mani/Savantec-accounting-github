@@ -187,55 +187,73 @@ export default function NewEnquiryPage() {
       return;
     }
 
-    try {
-      const token = localStorage.getItem("access_token");
-      if (!token) {
-        setError("Authentication required. Please login again.");
-        setLoading(false);
-        return;
+   try {
+    const token = localStorage.getItem("access_token");
+    if (!token) {
+      setError("Authentication required. Please login again.");
+      setLoading(false);
+      return;
+    }
+
+    const formDataToSend = new FormData();
+    
+    // Append basic form data (match the form field names in the API)
+    formDataToSend.append("enquiry_no", formData.enquiry_no);
+    formDataToSend.append("enquiry_date", formData.enquiry_date);
+    formDataToSend.append("company_id_form", formData.company_id); // Note: changed from company_id
+    formDataToSend.append("kind_attn", formData.kind_attn || "");
+    formDataToSend.append("mail_id", formData.mail_id || "");
+    formDataToSend.append("phone_no", formData.phone_no || "");
+    formDataToSend.append("remarks", formData.remarks || "");
+    formDataToSend.append("salesman_id", formData.salesman_id || "");
+    formDataToSend.append("status", formData.status);
+
+    // Prepare items data
+    const itemsData = enquiryItems.map((item, index) => ({
+      product_id: item.product_id || "",
+      description: item.description,
+      quantity: item.quantity,
+      notes: `Item ${index + 1}`,
+      // Include product name for reference
+      product_name: products.find(p => p.id === item.product_id)?.name || ""
+    }));
+    formDataToSend.append("items", JSON.stringify(itemsData));
+
+    // Append image files
+    enquiryItems.forEach((item, index) => {
+      if (item.image) {
+        formDataToSend.append("files", item.image);
       }
+    });
 
-      const formDataToSend = new FormData();
-      
-      // Append basic form data
-      Object.entries(formData).forEach(([key, value]) => {
-        if (value) formDataToSend.append(key, value.toString());
-      });
-
-      // Append items data
-      enquiryItems.forEach((item, index) => {
-        formDataToSend.append(`items[${index}][product_id]`, item.product_id || "");
-        formDataToSend.append(`items[${index}][description]`, item.description);
-        formDataToSend.append(`items[${index}][quantity]`, item.quantity.toString());
-        if (item.image) {
-          formDataToSend.append(`items[${index}][image]`, item.image);
-        }
-      });
-
-      // NOTE: This endpoint might not exist in your backend
-      // You might need to create it or use a different endpoint
-      const response = await fetch(`${API_BASE}/api/companies/${company?.id}/enquiries`, {
+    // Use the new formdata endpoint
+    const response = await fetch(
+      `${API_BASE}/api/companies/${company?.id}/enquiries/formdata`,
+      {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
+          // Don't set Content-Type - let browser set it with boundary
         },
         body: formDataToSend,
-      });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.detail || `Failed to create enquiry (Status: ${response.status})`);
       }
+    );
 
+    if (!response.ok) {
       const data = await response.json();
-      alert("Enquiry created successfully!");
-      router.push(`/enquiries`);
-    } catch (err: any) {
-      console.error("Error creating enquiry:", err);
-      setError(err.message || "Failed to create enquiry. Please check if the backend is running and has the enquiries endpoint.");
-    } finally {
-      setLoading(false);
+      throw new Error(data.detail || `Failed to create enquiry (Status: ${response.status})`);
     }
+
+    const data = await response.json();
+    alert("Enquiry created successfully!");
+    router.push(`/enquiries`);
+  } catch (err: any) {
+    console.error("Error creating enquiry:", err);
+    setError(err.message || "Failed to create enquiry.");
+  } finally {
+    setLoading(false);
+  }
+
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {

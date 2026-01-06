@@ -22,6 +22,7 @@ import uuid
 
 
 discount_type_enum = Enum('percentage', 'fixed', name='discount_type_enum', create_type=False)
+
 def generate_uuid():
     """Generate a UUID string."""
     return str(uuid.uuid4())
@@ -462,8 +463,6 @@ class User(Base):
         return f"<User {self.email}>"
 
 
-
-
 class Brand(Base):
     """Brand model for items."""
     __tablename__ = "brands"
@@ -514,7 +513,6 @@ class Tax(Base):
     
     def __repr__(self):
         return f"<Tax(id={self.id}, name='{self.name}', rate={self.rate})>"
-
 
 
 class Company(Base):
@@ -576,13 +574,13 @@ class Company(Base):
     # Relationships
     owner = relationship("User", back_populates="companies")
     customers = relationship("Customer", back_populates="company", cascade="all, delete-orphan")
-    products = relationship("Product", back_populates="company", cascade="all, delete-orphan")
+    items = relationship("Product", back_populates="company", cascade="all, delete-orphan")
     invoices = relationship("Invoice", back_populates="company", cascade="all, delete-orphan")
     bank_accounts = relationship("BankAccount", back_populates="company", cascade="all, delete-orphan")
     accounts = relationship("Account", back_populates="company", cascade="all, delete-orphan")
     transactions = relationship("Transaction", back_populates="company", cascade="all, delete-orphan")
     bank_imports = relationship("BankImport", back_populates="company", cascade="all, delete-orphan")
-
+    
     __table_args__ = (
         Index("idx_company_user", "user_id"),
         Index("idx_company_gstin", "gstin"),
@@ -661,7 +659,7 @@ class Customer(Base):
 class Product(Base):
     """Product/Service model - Unified product with inventory tracking."""
     __tablename__ = "items"
-
+    
     id = Column(String(36), primary_key=True, default=generate_uuid)
     name = Column(String(191), nullable=False, index=True)
     item_group = Column(String(200), default="single")
@@ -678,7 +676,7 @@ class Product(Base):
     tax_type = Column(String(100), nullable=True)
     mrp = Column(Numeric(15, 2), default=0.00)
     company_id = Column(String(36), ForeignKey("companies.id"), nullable=False, index=True)
-    tax_id = Column(String(36), ForeignKey("taxes.id"), nullable=True, index=True)  # Change from In
+    tax_id = Column(String(36), ForeignKey("taxes.id"), nullable=True, index=True)
     profit_margin = Column(Numeric(8, 2), default=0.00)
     sku = Column(String(100), nullable=True, index=True)
     seller_points = Column(Integer, default=0)
@@ -693,22 +691,27 @@ class Product(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     deleted_at = Column(DateTime, nullable=True)
     
-    # Relationships
+    # ADD this column if not present
+    stock_group_id = Column(String(36), ForeignKey("stock_groups.id", ondelete="SET NULL"), index=True)
+    
+    # Relationships - FIXED
     company = relationship("Company", back_populates="items")
     tax = relationship("Tax", back_populates="items")
     creator = relationship("User", back_populates="items")
+    stock_group = relationship("StockGroup", back_populates="items")
+    batches = relationship("Batch", back_populates="product", cascade="all, delete-orphan")
+    bom_components = relationship("BOMComponent", back_populates="component_product", cascade="all, delete-orphan")
+    
+    # Add the missing relationship for stock_entries
+    stock_entries = relationship("StockEntry", back_populates="product", cascade="all, delete-orphan")
+    alternative_mappings = relationship("ProductAlternativeMapping", back_populates="product", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<Item(id={self.id}, name='{self.name}', sku='{self.sku}')>"
 
 
-
 class AlternativeProduct(Base):
-    """Alternative/Competitor Product model - Reference only, no inventory tracking.
-    
-    Used to store competitor products that can be mapped to company products
-    for sales teams to identify substitutes.
-    """
+    """Alternative/Competitor Product model - Reference only, no inventory tracking."""
     __tablename__ = "alternative_products"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
@@ -745,11 +748,7 @@ class AlternativeProduct(Base):
 
 
 class ProductAlternativeMapping(Base):
-    """Mapping table for Product to AlternativeProduct (many-to-many).
-    
-    Links company products to alternative/competitor products with
-    optional notes and priority for sales recommendations.
-    """
+    """Mapping table for Product to AlternativeProduct (many-to-many)."""
     __tablename__ = "product_alternative_mappings"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
@@ -765,7 +764,7 @@ class ProductAlternativeMapping(Base):
     created_by = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"))
 
     # Relationships
-    product = relationship("Product", backref="alternative_mappings")
+    product = relationship("Product", back_populates="alternative_mappings")
     alternative_product = relationship("AlternativeProduct", back_populates="product_mappings")
 
     __table_args__ = (
@@ -1093,6 +1092,7 @@ class Transaction(Base):
     entries = relationship("TransactionEntry", back_populates="transaction", cascade="all, delete-orphan")
     reversed_by = relationship("Transaction", foreign_keys=[reversed_by_id], remote_side=[id])
     reverses = relationship("Transaction", foreign_keys=[reverses_id], remote_side=[id])
+    scenario = relationship("Scenario")
 
     __table_args__ = (
         Index("idx_transaction_company", "company_id"),
@@ -1136,6 +1136,7 @@ class TransactionEntry(Base):
     transaction = relationship("Transaction", back_populates="entries")
     account = relationship("Account", back_populates="transaction_entries")
     cost_center = relationship("CostCenter")
+    cheque = relationship("Cheque")
 
     __table_args__ = (
         Index("idx_entry_transaction", "transaction_id"),
@@ -1258,11 +1259,14 @@ class StockGroup(Base):
 
     # Relationships
     parent = relationship("StockGroup", remote_side=[id], backref="children")
-    items = relationship("Product", back_populates="stock_group", foreign_keys="[Product.stock_group_id]")
+    items = relationship("Product", back_populates="stock_group")
 
     __table_args__ = (
         Index("idx_stock_group_company", "company_id"),
     )
+
+    def __repr__(self):
+        return f"<StockGroup {self.name}>"
 
 
 class Godown(Base):
@@ -1286,10 +1290,15 @@ class Godown(Base):
     # Relationships
     parent = relationship("Godown", remote_side=[id], backref="sub_locations")
     stock_entries = relationship("StockEntry", back_populates="godown", foreign_keys="[StockEntry.godown_id]")
+    from_stock_entries = relationship("StockEntry", foreign_keys="[StockEntry.from_godown_id]", back_populates="from_godown")
+    to_stock_entries = relationship("StockEntry", foreign_keys="[StockEntry.to_godown_id]", back_populates="to_godown")
 
     __table_args__ = (
         Index("idx_godown_company", "company_id"),
     )
+
+    def __repr__(self):
+        return f"<Godown {self.name}>"
 
 
 class Batch(Base):
@@ -1297,7 +1306,7 @@ class Batch(Base):
     __tablename__ = "batches"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    product_id = Column(String(36), ForeignKey("items.id", ondelete="CASCADE"), nullable=False)  # Changed from stock_item_id
+    product_id = Column(String(36), ForeignKey("items.id", ondelete="CASCADE"), nullable=False)
     
     batch_number = Column(String(100), nullable=False)
     manufacturing_date = Column(DateTime)
@@ -1318,6 +1327,9 @@ class Batch(Base):
         Index("idx_batch_expiry", "expiry_date"),
     )
 
+    def __repr__(self):
+        return f"<Batch {self.batch_number}>"
+
 
 class StockEntry(Base):
     """Stock Entry model - Individual stock movement record."""
@@ -1325,7 +1337,7 @@ class StockEntry(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     company_id = Column(String(36), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
-    product_id = Column(String(36), ForeignKey("items.id", ondelete="CASCADE"), nullable=False)  # Changed from stock_item_id
+    product_id = Column(String(36), ForeignKey("items.id", ondelete="CASCADE"), nullable=False)
     godown_id = Column(String(36), ForeignKey("godowns.id", ondelete="SET NULL"))
     batch_id = Column(String(36), ForeignKey("batches.id", ondelete="SET NULL"))
     
@@ -1355,14 +1367,17 @@ class StockEntry(Base):
     product = relationship("Product", back_populates="stock_entries", foreign_keys=[product_id])
     godown = relationship("Godown", back_populates="stock_entries", foreign_keys=[godown_id])
     batch = relationship("Batch")
-    from_godown = relationship("Godown", foreign_keys=[from_godown_id])
-    to_godown = relationship("Godown", foreign_keys=[to_godown_id])
+    from_godown = relationship("Godown", foreign_keys=[from_godown_id], back_populates="from_stock_entries")
+    to_godown = relationship("Godown", foreign_keys=[to_godown_id], back_populates="to_stock_entries")
 
     __table_args__ = (
         Index("idx_stock_entry_company", "company_id"),
         Index("idx_stock_entry_item", "product_id"),
         Index("idx_stock_entry_date", "entry_date"),
     )
+
+    def __repr__(self):
+        return f"<StockEntry {self.movement_type} - {self.quantity}>"
 
 
 class BillOfMaterial(Base):
@@ -1373,7 +1388,7 @@ class BillOfMaterial(Base):
     company_id = Column(String(36), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
     
     # Finished product
-    finished_item_id = Column(String(36), ForeignKey("items.id", ondelete="CASCADE"), nullable=False)  # Changed from stock_items
+    finished_item_id = Column(String(36), ForeignKey("items.id", ondelete="CASCADE"), nullable=False)
     
     name = Column(String(255), nullable=False)
     description = Column(Text)
@@ -1387,12 +1402,15 @@ class BillOfMaterial(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    finished_item = relationship("Product")
+    finished_item = relationship("Product", foreign_keys=[finished_item_id])
     components = relationship("BOMComponent", back_populates="bom", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("idx_bom_company", "company_id"),
     )
+
+    def __repr__(self):
+        return f"<BillOfMaterial {self.name}>"
 
 
 class BOMComponent(Base):
@@ -1401,7 +1419,7 @@ class BOMComponent(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     bom_id = Column(String(36), ForeignKey("bills_of_material.id", ondelete="CASCADE"), nullable=False)
-    component_item_id = Column(String(36), ForeignKey("items.id", ondelete="CASCADE"), nullable=False)  # Changed from stock_items
+    component_item_id = Column(String(36), ForeignKey("items.id", ondelete="CASCADE"), nullable=False)
     
     quantity = Column(Numeric(14, 3), nullable=False)
     unit = Column(String(20))
@@ -1418,6 +1436,9 @@ class BOMComponent(Base):
     __table_args__ = (
         Index("idx_bom_component_bom", "bom_id"),
     )
+
+    def __repr__(self):
+        return f"<BOMComponent {self.quantity} x {self.component_product.name if self.component_product else 'Unknown'}>"
 
 
 # ============== ORDER MODELS ==============
@@ -1468,7 +1489,7 @@ class SalesOrder(Base):
     sales_person = relationship("Employee")
     items = relationship("SalesOrderItem", back_populates="order", cascade="all, delete-orphan")
     delivery_notes = relationship("DeliveryNote", back_populates="sales_order")
-    invoice = relationship("Invoice")
+    invoice = relationship("Invoice", foreign_keys=[invoice_id])
 
     __table_args__ = (
         Index("idx_sales_order_company", "company_id"),
@@ -1477,6 +1498,9 @@ class SalesOrder(Base):
         Index("idx_sales_order_ticket", "sales_ticket_id"),
     )
 
+    def __repr__(self):
+        return f"<SalesOrder {self.order_number}>"
+
 
 class SalesOrderItem(Base):
     """Sales Order Item model."""
@@ -1484,7 +1508,7 @@ class SalesOrderItem(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     order_id = Column(String(36), ForeignKey("sales_orders.id", ondelete="CASCADE"), nullable=False)
-    product_id = Column(String(36), ForeignKey("items.id", ondelete="SET NULL"))  # Removed stock_item_id
+    product_id = Column(String(36), ForeignKey("items.id", ondelete="SET NULL"))
     
     description = Column(String(500), nullable=False)
     quantity = Column(Numeric(14, 3), nullable=False)
@@ -1509,6 +1533,9 @@ class SalesOrderItem(Base):
     __table_args__ = (
         Index("idx_so_item_order", "order_id"),
     )
+
+    def __repr__(self):
+        return f"<SalesOrderItem {self.description[:30]}>"
 
 
 class PurchaseOrder(Base):
@@ -1555,6 +1582,9 @@ class PurchaseOrder(Base):
         Index("idx_purchase_order_status", "status"),
     )
 
+    def __repr__(self):
+        return f"<PurchaseOrder {self.order_number}>"
+
 
 class PurchaseOrderItem(Base):
     """Purchase Order Item model."""
@@ -1562,7 +1592,7 @@ class PurchaseOrderItem(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     order_id = Column(String(36), ForeignKey("purchase_orders.id", ondelete="CASCADE"), nullable=False)
-    product_id = Column(String(36), ForeignKey("items.id", ondelete="SET NULL"))  # Changed from stock_item_id
+    product_id = Column(String(36), ForeignKey("items.id", ondelete="SET NULL"))
     
     description = Column(String(500), nullable=False)
     quantity = Column(Numeric(14, 3), nullable=False)
@@ -1587,6 +1617,9 @@ class PurchaseOrderItem(Base):
     __table_args__ = (
         Index("idx_po_item_order", "order_id"),
     )
+
+    def __repr__(self):
+        return f"<PurchaseOrderItem {self.description[:30]}>"
 
 
 class DeliveryNote(Base):
@@ -1629,6 +1662,9 @@ class DeliveryNote(Base):
         Index("idx_delivery_note_order", "sales_order_id"),
     )
 
+    def __repr__(self):
+        return f"<DeliveryNote {self.delivery_number}>"
+
 
 class DeliveryNoteItem(Base):
     """Delivery Note Item model."""
@@ -1636,7 +1672,7 @@ class DeliveryNoteItem(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     delivery_note_id = Column(String(36), ForeignKey("delivery_notes.id", ondelete="CASCADE"), nullable=False)
-    product_id = Column(String(36), ForeignKey("items.id", ondelete="SET NULL"))  # Changed from stock_item_id
+    product_id = Column(String(36), ForeignKey("items.id", ondelete="SET NULL"))
     batch_id = Column(String(36), ForeignKey("batches.id", ondelete="SET NULL"))
     
     description = Column(String(500), nullable=False)
@@ -1653,6 +1689,9 @@ class DeliveryNoteItem(Base):
     __table_args__ = (
         Index("idx_dn_item_note", "delivery_note_id"),
     )
+
+    def __repr__(self):
+        return f"<DeliveryNoteItem {self.description[:30]}>"
 
 
 class ReceiptNote(Base):
@@ -1690,6 +1729,9 @@ class ReceiptNote(Base):
         Index("idx_receipt_note_order", "purchase_order_id"),
     )
 
+    def __repr__(self):
+        return f"<ReceiptNote {self.receipt_number}>"
+
 
 class ReceiptNoteItem(Base):
     """Receipt Note Item model."""
@@ -1697,7 +1739,7 @@ class ReceiptNoteItem(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     receipt_note_id = Column(String(36), ForeignKey("receipt_notes.id", ondelete="CASCADE"), nullable=False)
-    product_id = Column(String(36), ForeignKey("items.id", ondelete="SET NULL"))  # Changed from stock_item_id
+    product_id = Column(String(36), ForeignKey("items.id", ondelete="SET NULL"))
     batch_id = Column(String(36), ForeignKey("batches.id", ondelete="SET NULL"))
     
     description = Column(String(500), nullable=False)
@@ -1720,6 +1762,9 @@ class ReceiptNoteItem(Base):
     __table_args__ = (
         Index("idx_rn_item_note", "receipt_note_id"),
     )
+
+    def __repr__(self):
+        return f"<ReceiptNoteItem {self.description[:30]}>"
 
 
 # ============== QUICK ENTRY MODEL ==============
@@ -1785,6 +1830,9 @@ class QuickEntry(Base):
         Index("idx_quick_entry_type", "entry_type"),
     )
 
+    def __repr__(self):
+        return f"<QuickEntry {self.entry_type} - {self.amount}>"
+
 
 # ============== PURCHASE INVOICE MODELS ==============
 
@@ -1830,6 +1878,9 @@ class TDSSection(Base):
         Index("idx_tds_section_code", "section_code"),
     )
 
+    def __repr__(self):
+        return f"<TDSSection {self.section_code}>"
+
 
 class PurchaseInvoice(Base):
     """Purchase Invoice model - Bills received from vendors with GST Input Credit."""
@@ -1837,13 +1888,13 @@ class PurchaseInvoice(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     company_id = Column(String(36), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
-    vendor_id = Column(String(36), ForeignKey("customers.id", ondelete="SET NULL"))  # Vendor stored in customers
+    vendor_id = Column(String(36), ForeignKey("customers.id", ondelete="SET NULL"))
     
     # Invoice identification
-    invoice_number = Column(String(50), nullable=False, index=True)  # Our internal number
-    vendor_invoice_number = Column(String(100))  # Vendor's invoice number
+    invoice_number = Column(String(50), nullable=False, index=True)
+    vendor_invoice_number = Column(String(100))
     invoice_date = Column(DateTime, nullable=False, default=datetime.utcnow)
-    vendor_invoice_date = Column(DateTime)  # Date on vendor's invoice
+    vendor_invoice_date = Column(DateTime)
     due_date = Column(DateTime)
     
     # Linked documents
@@ -1858,17 +1909,17 @@ class PurchaseInvoice(Base):
     is_reverse_charge = Column(Boolean, default=False)
     
     # Amounts (all in INR)
-    subtotal = Column(Numeric(14, 2), default=0)  # Total before tax
+    subtotal = Column(Numeric(14, 2), default=0)
     discount_amount = Column(Numeric(14, 2), default=0)
     
     # GST breakup - Input Credit
-    cgst_amount = Column(Numeric(14, 2), default=0)  # Central GST Input
-    sgst_amount = Column(Numeric(14, 2), default=0)  # State GST Input
-    igst_amount = Column(Numeric(14, 2), default=0)  # Integrated GST Input
+    cgst_amount = Column(Numeric(14, 2), default=0)
+    sgst_amount = Column(Numeric(14, 2), default=0)
+    igst_amount = Column(Numeric(14, 2), default=0)
     cess_amount = Column(Numeric(14, 2), default=0)
     
     total_tax = Column(Numeric(14, 2), default=0)
-    total_amount = Column(Numeric(14, 2), default=0)  # Final amount
+    total_amount = Column(Numeric(14, 2), default=0)
     
     # TDS (Tax Deducted at Source)
     tds_applicable = Column(Boolean, default=False)
@@ -1882,14 +1933,14 @@ class PurchaseInvoice(Base):
     # Payment tracking
     amount_paid = Column(Numeric(14, 2), default=0)
     balance_due = Column(Numeric(14, 2), default=0)
-    outstanding_amount = Column(Numeric(14, 2), default=0)  # NEW: For bill-wise tracking
+    outstanding_amount = Column(Numeric(14, 2), default=0)
     
     # Status
     status = Column(Enum(PurchaseInvoiceStatus), default=PurchaseInvoiceStatus.DRAFT)
     
     # GST eligibility for input credit
-    itc_eligible = Column(Boolean, default=True)  # Is Input Tax Credit eligible?
-    itc_claimed = Column(Boolean, default=False)  # Has ITC been claimed?
+    itc_eligible = Column(Boolean, default=True)
+    itc_claimed = Column(Boolean, default=False)
     
     # Additional info
     notes = Column(Text)
@@ -2009,6 +2060,9 @@ class PurchasePayment(Base):
         Index("idx_purchase_payment_date", "payment_date"),
     )
 
+    def __repr__(self):
+        return f"<PurchasePayment {self.amount} for PI {self.purchase_invoice_id}>"
+
 
 class TDSEntry(Base):
     """TDS Entry model - Tracks TDS deductions."""
@@ -2027,10 +2081,10 @@ class TDSEntry(Base):
     
     # TDS details
     tds_section_id = Column(String(36), ForeignKey("tds_sections.id", ondelete="SET NULL"))
-    section_code = Column(String(20))  # e.g., "194C"
+    section_code = Column(String(20))
     
     # Financial details
-    gross_amount = Column(Numeric(14, 2), nullable=False)  # Amount before TDS
+    gross_amount = Column(Numeric(14, 2), nullable=False)
     tds_rate = Column(Numeric(5, 2), nullable=False)
     tds_amount = Column(Numeric(14, 2), nullable=False)
     
@@ -2040,15 +2094,15 @@ class TDSEntry(Base):
     # Challan details (when TDS is deposited)
     challan_number = Column(String(50))
     challan_date = Column(DateTime)
-    bsr_code = Column(String(10))  # BSR code of bank
+    bsr_code = Column(String(10))
     
     # Status
     is_deposited = Column(Boolean, default=False)
     deposit_date = Column(DateTime)
     
     # Quarter (for TDS return filing)
-    financial_year = Column(String(9))  # e.g., "2024-2025"
-    quarter = Column(String(2))  # Q1, Q2, Q3, Q4
+    financial_year = Column(String(9))
+    quarter = Column(String(2))
     
     notes = Column(Text)
     
@@ -2083,9 +2137,9 @@ class ProductUnit(Base):
     id = Column(String(36), primary_key=True, default=generate_uuid)
     product_id = Column(String(36), ForeignKey("items.id", ondelete="CASCADE"), nullable=False)
     
-    unit_name = Column(String(50), nullable=False)  # Box, Carton, Dozen
-    symbol = Column(String(20))  # BOX, CTN, DZ
-    conversion_factor = Column(Numeric(15, 6), nullable=False)  # 1 Box = 12 Pieces
+    unit_name = Column(String(50), nullable=False)
+    symbol = Column(String(20))
+    conversion_factor = Column(Numeric(15, 6), nullable=False)
     is_primary = Column(Boolean, default=False)
     
     # For purchases vs sales
@@ -2098,6 +2152,9 @@ class ProductUnit(Base):
         Index("idx_product_unit_product", "product_id"),
     )
 
+    def __repr__(self):
+        return f"<ProductUnit {self.unit_name}>"
+
 
 class PriceLevel(Base):
     """Price levels like MRP, Retail, Wholesale, Dealer."""
@@ -2106,7 +2163,7 @@ class PriceLevel(Base):
     id = Column(String(36), primary_key=True, default=generate_uuid)
     company_id = Column(String(36), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
     
-    name = Column(String(100), nullable=False)  # MRP, Retail, Wholesale
+    name = Column(String(100), nullable=False)
     code = Column(String(20))
     description = Column(Text)
     
@@ -2123,6 +2180,9 @@ class PriceLevel(Base):
         Index("idx_price_level_company", "company_id"),
     )
 
+    def __repr__(self):
+        return f"<PriceLevel {self.name}>"
+
 
 class ProductPrice(Base):
     """Product prices by price level with effective dates."""
@@ -2134,7 +2194,7 @@ class ProductPrice(Base):
     
     price = Column(Numeric(15, 2), nullable=False)
     effective_from = Column(DateTime, nullable=False)
-    effective_to = Column(DateTime)  # Null = no end date
+    effective_to = Column(DateTime)
     
     # Optional: price per unit
     unit_id = Column(String(36), ForeignKey("product_units.id", ondelete="SET NULL"))
@@ -2147,6 +2207,9 @@ class ProductPrice(Base):
         Index("idx_product_price_level", "price_level_id"),
         Index("idx_product_price_date", "effective_from"),
     )
+
+    def __repr__(self):
+        return f"<ProductPrice {self.price} from {self.effective_from}>"
 
 
 class SerialNumberStatus(str, PyEnum):
@@ -2199,6 +2262,9 @@ class SerialNumber(Base):
         Index("idx_serial_status", "status"),
     )
 
+    def __repr__(self):
+        return f"<SerialNumber {self.serial_number}>"
+
 
 class StockAdjustmentStatus(str, PyEnum):
     """Stock adjustment status."""
@@ -2248,6 +2314,9 @@ class StockAdjustment(Base):
         Index("idx_stock_adj_date", "adjustment_date"),
     )
 
+    def __repr__(self):
+        return f"<StockAdjustment {self.adjustment_number}>"
+
 
 class StockAdjustmentItem(Base):
     """Individual items in stock adjustment."""
@@ -2259,9 +2328,9 @@ class StockAdjustmentItem(Base):
     batch_id = Column(String(36), ForeignKey("batches.id", ondelete="SET NULL"))
     
     # Quantities
-    book_quantity = Column(Numeric(14, 3), nullable=False)  # System stock
-    physical_quantity = Column(Numeric(14, 3), nullable=False)  # Actual count
-    variance_quantity = Column(Numeric(14, 3), nullable=False)  # physical - book
+    book_quantity = Column(Numeric(14, 3), nullable=False)
+    physical_quantity = Column(Numeric(14, 3), nullable=False)
+    variance_quantity = Column(Numeric(14, 3), nullable=False)
     
     # Values
     rate = Column(Numeric(14, 2), default=0)
@@ -2276,6 +2345,9 @@ class StockAdjustmentItem(Base):
     __table_args__ = (
         Index("idx_stock_adj_item_adj", "adjustment_id"),
     )
+
+    def __repr__(self):
+        return f"<StockAdjustmentItem {self.variance_quantity}>"
 
 
 class DiscountType(str, PyEnum):
@@ -2299,14 +2371,14 @@ class DiscountRule(Base):
     discount_type = Column(Enum(DiscountType), nullable=False)
     
     # Applicability
-    applies_to = Column(String(20), default="all")  # all, product, category, customer
+    applies_to = Column(String(20), default="all")
     product_id = Column(String(36), ForeignKey("items.id", ondelete="CASCADE"))
     stock_group_id = Column(String(36), ForeignKey("stock_groups.id", ondelete="CASCADE"))
     customer_id = Column(String(36), ForeignKey("customers.id", ondelete="CASCADE"))
     price_level_id = Column(String(36), ForeignKey("price_levels.id", ondelete="CASCADE"))
     
     # Discount values
-    discount_value = Column(Numeric(10, 2), nullable=False)  # % or amount
+    discount_value = Column(Numeric(10, 2), nullable=False)
     
     # Quantity-based rules
     min_quantity = Column(Numeric(14, 3))
@@ -2322,11 +2394,11 @@ class DiscountRule(Base):
     
     # Limits
     max_discount_amount = Column(Numeric(14, 2))
-    usage_limit = Column(Integer)  # Total uses allowed
+    usage_limit = Column(Integer)
     usage_count = Column(Integer, default=0)
     
     is_active = Column(Boolean, default=True)
-    priority = Column(Integer, default=0)  # Higher = applied first
+    priority = Column(Integer, default=0)
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -2335,6 +2407,9 @@ class DiscountRule(Base):
         Index("idx_discount_rule_company", "company_id"),
         Index("idx_discount_rule_product", "product_id"),
     )
+
+    def __repr__(self):
+        return f"<DiscountRule {self.name}>"
 
 
 class ManufacturingOrderStatus(str, PyEnum):
@@ -2395,6 +2470,9 @@ class ManufacturingOrder(Base):
         Index("idx_mfg_order_status", "status"),
     )
 
+    def __repr__(self):
+        return f"<ManufacturingOrder {self.order_number}>"
+
 
 class ManufacturingConsumption(Base):
     """Raw materials consumed in manufacturing."""
@@ -2420,6 +2498,9 @@ class ManufacturingConsumption(Base):
         Index("idx_mfg_consumption_order", "order_id"),
     )
 
+    def __repr__(self):
+        return f"<ManufacturingConsumption {self.product_id}>"
+
 
 class ManufacturingByproduct(Base):
     """Byproducts from manufacturing."""
@@ -2441,6 +2522,9 @@ class ManufacturingByproduct(Base):
     __table_args__ = (
         Index("idx_mfg_byproduct_order", "order_id"),
     )
+
+    def __repr__(self):
+        return f"<ManufacturingByproduct {self.product_id}>"
 
 
 # ============== BANKING MODELS ==============
@@ -2473,12 +2557,15 @@ class ChequeBook(Base):
         Index("idx_cheque_book_bank", "bank_account_id"),
     )
 
+    def __repr__(self):
+        return f"<ChequeBook {self.cheque_series_from}-{self.cheque_series_to}>"
+
 
 class ChequeStatus(str, PyEnum):
     """Cheque status."""
     BLANK = "blank"
     ISSUED = "issued"
-    RECEIVED = "received"  # For cheques received from customers
+    RECEIVED = "received"
     DEPOSITED = "deposited"
     CLEARED = "cleared"
     BOUNCED = "bounced"
@@ -2512,12 +2599,12 @@ class Cheque(Base):
     drawn_on_branch = Column(String(255))
     
     amount = Column(Numeric(14, 2), nullable=False)
-    payee_name = Column(String(255))  # For issued
-    drawer_name = Column(String(255))  # For received
+    payee_name = Column(String(255))
+    drawer_name = Column(String(255))
     
     # Party reference
-    party_id = Column(String(36))  # Customer or Vendor ID
-    party_type = Column(String(20))  # 'customer' or 'vendor'
+    party_id = Column(String(36))
+    party_type = Column(String(20))
     
     status = Column(Enum(ChequeStatus), default=ChequeStatus.BLANK)
     
@@ -2540,7 +2627,7 @@ class Cheque(Base):
     
     # Invoice reference
     invoice_id = Column(String(36))
-    invoice_type = Column(String(20))  # 'sales' or 'purchase'
+    invoice_type = Column(String(20))
     
     notes = Column(Text)
     
@@ -2556,6 +2643,9 @@ class Cheque(Base):
         Index("idx_cheque_date", "cheque_date"),
     )
 
+    def __repr__(self):
+        return f"<Cheque {self.cheque_number}>"
+
 
 class PostDatedCheque(Base):
     """Post-dated cheques (PDC) tracking."""
@@ -2564,7 +2654,7 @@ class PostDatedCheque(Base):
     id = Column(String(36), primary_key=True, default=generate_uuid)
     company_id = Column(String(36), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
     
-    pdc_type = Column(String(20), nullable=False)  # received, issued
+    pdc_type = Column(String(20), nullable=False)
     
     # Party
     party_id = Column(String(36))
@@ -2573,18 +2663,18 @@ class PostDatedCheque(Base):
     
     # Cheque details
     cheque_number = Column(String(20), nullable=False)
-    cheque_date = Column(DateTime, nullable=False)  # Future date
+    cheque_date = Column(DateTime, nullable=False)
     bank_name = Column(String(255))
     branch_name = Column(String(255))
     
     amount = Column(Numeric(14, 2), nullable=False)
     
-    status = Column(String(20), default="pending")  # pending, deposited, cleared, bounced
+    status = Column(String(20), default="pending")
     
     # Dates
-    received_date = Column(DateTime)  # When PDC was received
-    deposit_date = Column(DateTime)   # When deposited to bank
-    clearing_date = Column(DateTime)  # When cleared
+    received_date = Column(DateTime)
+    deposit_date = Column(DateTime)
+    clearing_date = Column(DateTime)
     
     # Reference
     invoice_id = Column(String(36))
@@ -2603,6 +2693,9 @@ class PostDatedCheque(Base):
         Index("idx_pdc_date", "cheque_date"),
         Index("idx_pdc_status", "status"),
     )
+
+    def __repr__(self):
+        return f"<PostDatedCheque {self.cheque_number}>"
 
 
 class BankReconciliation(Base):
@@ -2635,7 +2728,7 @@ class BankReconciliation(Base):
     interest_not_recorded = Column(Numeric(14, 2), default=0)
     other_differences = Column(Numeric(14, 2), default=0)
     
-    status = Column(String(20), default="draft")  # draft, in_progress, completed
+    status = Column(String(20), default="draft")
     
     completed_by = Column(String(36))
     completed_at = Column(DateTime)
@@ -2652,6 +2745,9 @@ class BankReconciliation(Base):
         Index("idx_brs_bank", "bank_account_id"),
         Index("idx_brs_date", "reconciliation_date"),
     )
+
+    def __repr__(self):
+        return f"<BankReconciliation {self.reconciliation_date}>"
 
 
 class ReconciliationEntry(Base):
@@ -2675,8 +2771,8 @@ class ReconciliationEntry(Base):
     
     # Matching
     is_matched = Column(Boolean, default=False)
-    match_type = Column(String(20))  # auto, manual
-    match_confidence = Column(Numeric(5, 2))  # For auto-match
+    match_type = Column(String(20))
+    match_confidence = Column(Numeric(5, 2))
     
     difference = Column(Numeric(14, 2), default=0)
     
@@ -2689,6 +2785,9 @@ class ReconciliationEntry(Base):
     __table_args__ = (
         Index("idx_recon_entry_recon", "reconciliation_id"),
     )
+
+    def __repr__(self):
+        return f"<ReconciliationEntry {self.is_matched}>"
 
 
 class RecurringFrequency(str, PyEnum):
@@ -2714,7 +2813,7 @@ class RecurringTransaction(Base):
     
     # Template transaction
     voucher_type = Column(Enum(VoucherType), nullable=False)
-    template_data = Column(JSON)  # Stores the transaction template
+    template_data = Column(JSON)
     
     # Party
     party_id = Column(String(36))
@@ -2726,25 +2825,25 @@ class RecurringTransaction(Base):
     # Account mapping for journal entries
     debit_account_id = Column(String(36), ForeignKey("accounts.id", ondelete="SET NULL"))
     credit_account_id = Column(String(36), ForeignKey("accounts.id", ondelete="SET NULL"))
-    category = Column(String(100))  # rent, utilities, subscription, etc.
+    category = Column(String(100))
     
     # Schedule
     frequency = Column(Enum(RecurringFrequency), nullable=False)
     start_date = Column(DateTime, nullable=False)
-    end_date = Column(DateTime)  # Null = no end
+    end_date = Column(DateTime)
     next_date = Column(DateTime, nullable=False)
     
     # Day of month/week
-    day_of_month = Column(Integer)  # 1-31
-    day_of_week = Column(Integer)  # 0-6
+    day_of_month = Column(Integer)
+    day_of_week = Column(Integer)
     
     # Limits
-    total_occurrences = Column(Integer)  # Total times to create
+    total_occurrences = Column(Integer)
     occurrences_created = Column(Integer, default=0)
     
     # Settings
-    auto_create = Column(Boolean, default=True)  # Auto-create or just remind
-    reminder_days = Column(Integer, default=3)  # Days before to remind
+    auto_create = Column(Boolean, default=True)
+    reminder_days = Column(Integer, default=3)
     
     is_active = Column(Boolean, default=True)
     
@@ -2763,6 +2862,9 @@ class RecurringTransaction(Base):
         Index("idx_recurring_next", "next_date"),
         Index("idx_recurring_active", "is_active"),
     )
+
+    def __repr__(self):
+        return f"<RecurringTransaction {self.name}>"
 
 
 # ============== ACCOUNTING MODELS ==============
@@ -2787,7 +2889,7 @@ class BillAllocation(Base):
     
     # Invoice reference
     invoice_id = Column(String(36), nullable=False)
-    invoice_type = Column(String(20), nullable=False)  # sales, purchase
+    invoice_type = Column(String(20), nullable=False)
     invoice_number = Column(String(50))
     
     # Allocation
@@ -2808,6 +2910,9 @@ class BillAllocation(Base):
         Index("idx_bill_alloc_payment", "payment_transaction_id"),
         Index("idx_bill_alloc_invoice", "invoice_id", "invoice_type"),
     )
+
+    def __repr__(self):
+        return f"<BillAllocation {self.allocated_amount}>"
 
 
 class AccountMappingType(str, PyEnum):
@@ -2831,7 +2936,7 @@ class AccountMapping(Base):
     
     # Category within type (e.g., 'rent', 'utilities', 'salary', 'pf')
     category = Column(String(100), nullable=False)
-    name = Column(String(255), nullable=False)  # Display name
+    name = Column(String(255), nullable=False)
     
     # Account mapping
     debit_account_id = Column(String(36), ForeignKey("accounts.id", ondelete="SET NULL"))
@@ -2839,10 +2944,10 @@ class AccountMapping(Base):
     
     # For payroll: single account mapping per component
     account_id = Column(String(36), ForeignKey("accounts.id", ondelete="SET NULL"))
-    is_debit = Column(Boolean, default=True)  # True = debit side, False = credit side
+    is_debit = Column(Boolean, default=True)
     
     # Settings
-    is_system = Column(Boolean, default=False)  # System defaults
+    is_system = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
     
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -2859,6 +2964,9 @@ class AccountMapping(Base):
         UniqueConstraint("company_id", "mapping_type", "category", name="uq_account_mapping"),
     )
 
+    def __repr__(self):
+        return f"<AccountMapping {self.name}>"
+
 
 class PayrollAccountConfig(Base):
     """Payroll-specific account configuration for salary components."""
@@ -2869,12 +2977,12 @@ class PayrollAccountConfig(Base):
     
     # Salary component reference
     salary_component_id = Column(String(36), ForeignKey("salary_components.id", ondelete="CASCADE"))
-    component_type = Column(String(50))  # 'earning', 'deduction', 'employer_contribution'
-    component_name = Column(String(100))  # For default configs without component link
+    component_type = Column(String(50))
+    component_name = Column(String(100))
     
     # Account mapping
     account_id = Column(String(36), ForeignKey("accounts.id", ondelete="SET NULL"))
-    is_debit = Column(Boolean, default=True)  # Earnings = Debit, Deductions = Credit
+    is_debit = Column(Boolean, default=True)
     
     # For employer contributions, we may need both sides
     contra_account_id = Column(String(36), ForeignKey("accounts.id", ondelete="SET NULL"))
@@ -2894,6 +3002,9 @@ class PayrollAccountConfig(Base):
         Index("idx_payroll_acc_component", "salary_component_id"),
     )
 
+    def __repr__(self):
+        return f"<PayrollAccountConfig {self.component_name}>"
+
 
 class PeriodLock(Base):
     """Period locking to prevent backdated entries."""
@@ -2906,7 +3017,7 @@ class PeriodLock(Base):
     locked_to = Column(DateTime, nullable=False)
     
     # Specific voucher types (null = all)
-    voucher_types = Column(JSON)  # ["payment", "receipt", "journal"]
+    voucher_types = Column(JSON)
     
     reason = Column(Text)
     
@@ -2922,6 +3033,9 @@ class PeriodLock(Base):
         Index("idx_period_lock_dates", "locked_from", "locked_to"),
     )
 
+    def __repr__(self):
+        return f"<PeriodLock {self.locked_from} to {self.locked_to}>"
+
 
 class AuditLog(Base):
     """Audit trail for all changes."""
@@ -2935,14 +3049,14 @@ class AuditLog(Base):
     record_id = Column(String(36), nullable=False)
     
     # Action
-    action = Column(String(20), nullable=False)  # create, update, delete
+    action = Column(String(20), nullable=False)
     
     # Values
     old_values = Column(JSON)
     new_values = Column(JSON)
     
     # Changes summary
-    changed_fields = Column(JSON)  # List of field names that changed
+    changed_fields = Column(JSON)
     
     # Who changed
     changed_by = Column(String(36))
@@ -2964,6 +3078,12 @@ class AuditLog(Base):
         Index("idx_audit_date", "changed_at"),
         Index("idx_audit_user", "changed_by"),
     )
+
+    def __repr__(self):
+        return f"<AuditLog {self.action} on {self.table_name}>"
+
+
+# ============== MISSING MODEL DEFINITIONS ==============
 
 
 class NarrationTemplate(Base):
@@ -2994,6 +3114,9 @@ class NarrationTemplate(Base):
         Index("idx_narration_voucher", "voucher_type"),
     )
 
+    def __repr__(self):
+        return f"<NarrationTemplate {self.name}>"
+
 
 class Scenario(Base):
     """What-if scenario management."""
@@ -3021,6 +3144,9 @@ class Scenario(Base):
     __table_args__ = (
         Index("idx_scenario_company", "company_id"),
     )
+
+    def __repr__(self):
+        return f"<Scenario {self.name}>"
 
 
 # ============== MISCELLANEOUS MODELS ==============
@@ -3058,6 +3184,9 @@ class Attachment(Base):
         Index("idx_attachment_company", "company_id"),
         Index("idx_attachment_entity", "entity_type", "entity_id"),
     )
+
+    def __repr__(self):
+        return f"<Attachment {self.file_name}>"
 
 
 class NotificationType(str, PyEnum):
@@ -3116,6 +3245,9 @@ class Notification(Base):
         Index("idx_notification_type", "notification_type"),
     )
 
+    def __repr__(self):
+        return f"<Notification {self.title}>"
+
 
 class DashboardWidget(Base):
     """Dashboard widget configuration per user."""
@@ -3145,6 +3277,9 @@ class DashboardWidget(Base):
         Index("idx_widget_company", "company_id"),
         Index("idx_widget_user", "user_id"),
     )
+
+    def __repr__(self):
+        return f"<DashboardWidget {self.widget_type}>"
 
 
 class ExportLog(Base):
@@ -3184,6 +3319,9 @@ class ExportLog(Base):
         Index("idx_export_user", "user_id"),
         Index("idx_export_date", "created_at"),
     )
+
+    def __repr__(self):
+        return f"<ExportLog {self.report_name}>"
 
 
 # ============== ADD NEW COLUMNS TO EXISTING TABLES ==============
@@ -3686,6 +3824,36 @@ class SalesTicket(Base):
         return f"<SalesTicket {self.ticket_number}>"
 
 
+class EnquiryItem(Base):
+    """Individual items in an enquiry."""
+    __tablename__ = "enquiry_items"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    enquiry_id = Column(String(36), ForeignKey("enquiries.id", ondelete="CASCADE"), nullable=False)
+    product_id = Column(String(36), ForeignKey("items.id", ondelete="SET NULL"))
+    
+    description = Column(String(500), nullable=False)
+    quantity = Column(Integer, default=1)
+    
+    # Image reference
+    image_url = Column(String(500))
+    
+    notes = Column(Text)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    enquiry = relationship("Enquiry", back_populates="items")
+    product = relationship("Product")
+
+    __table_args__ = (
+        Index("idx_enquiry_item_enquiry", "enquiry_id"),
+    )
+
+    def __repr__(self):
+        return f"<EnquiryItem {self.description[:30]}>"
+
+
 class Enquiry(Base):
     """Enquiry model - Top of sales funnel."""
     __tablename__ = "enquiries"
@@ -3758,6 +3926,7 @@ class Enquiry(Base):
     sales_person = relationship("Employee")
     sales_ticket = relationship("SalesTicket", back_populates="enquiries")
     converted_quotation = relationship("Quotation", foreign_keys=[converted_quotation_id])
+    items = relationship("EnquiryItem", back_populates="enquiry", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("idx_enquiry_company", "company_id"),
@@ -3769,6 +3938,29 @@ class Enquiry(Base):
 
     def __repr__(self):
         return f"<Enquiry {self.enquiry_number}>"
+
+
+class SalesTicketLogAction(str, PyEnum):
+    """Sales ticket log action types."""
+    CREATED = "created"
+    STATUS_CHANGED = "status_changed"
+    STAGE_CHANGED = "stage_changed"
+    ENQUIRY_CREATED = "enquiry_created"
+    QUOTATION_CREATED = "quotation_created"
+    QUOTATION_SENT = "quotation_sent"
+    QUOTATION_APPROVED = "quotation_approved"
+    QUOTATION_REJECTED = "quotation_rejected"
+    SALES_ORDER_CREATED = "sales_order_created"
+    DELIVERY_CREATED = "delivery_created"
+    DELIVERY_DISPATCHED = "delivery_dispatched"
+    DELIVERY_COMPLETED = "delivery_completed"
+    INVOICE_CREATED = "invoice_created"
+    PAYMENT_RECEIVED = "payment_received"
+    NOTE_ADDED = "note_added"
+    CONTACT_CHANGED = "contact_changed"
+    SALES_PERSON_CHANGED = "sales_person_changed"
+    VALUE_UPDATED = "value_updated"
+    FOLLOW_UP_SCHEDULED = "follow_up_scheduled"
 
 
 class SalesTicketLogAction(str, PyEnum):
