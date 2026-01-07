@@ -355,44 +355,67 @@ const handleSubmit = async (e: React.FormEvent) => {
   setError(null);
 
   try {
-    // Prepare data for API
-    const apiData = {
-      name: formData.name,
-      contact: formData.contact,
-      email: formData.email || undefined,
-      mobile: formData.mobile || undefined,
-      tax_number: formData.tax_number || undefined,
-      gst_registration_type: formData.gst_registration_type || undefined,
-      pan_number: formData.pan_number || undefined,
-      vendor_code: formData.vendor_code || undefined,
-      opening_balance: formData.opening_balance ? parseFloat(formData.opening_balance) : undefined,
-      opening_balance_type: formData.opening_balance_type || undefined,
-      opening_balance_mode: formData.opening_balance_mode || undefined,
-      opening_balance_split: formData.opening_balance_mode === "split" ? 
-        formData.opening_balance_split.map(item => ({
-          date: item.date,
-          voucher_name: item.voucher_name,
-          days: item.days ? parseInt(item.days) : undefined, // Convert string to number
-          amount: parseFloat(item.amount)
-        })) : undefined,
-      credit_limit: formData.credit_limit ? parseFloat(formData.credit_limit) : undefined,
-      credit_days: formData.credit_days ? parseInt(formData.credit_days) : undefined,
-      contact_persons: formData.contact_persons.filter(p => p.name.trim() || p.email.trim() || p.phone.trim()),
-      billing_address: formData.billing_address || undefined,
-      billing_city: formData.billing_city || undefined,
-      billing_state: formData.billing_state || undefined,
-      billing_country: formData.billing_country,
-      billing_zip: formData.billing_zip || undefined,
-      shipping_address: sameAsBilling ? formData.billing_address : (formData.shipping_address || undefined),
-      shipping_city: sameAsBilling ? formData.billing_city : (formData.shipping_city || undefined),
-      shipping_state: sameAsBilling ? formData.billing_state : (formData.shipping_state || undefined),
-      shipping_country: sameAsBilling ? formData.billing_country : formData.shipping_country,
-      shipping_zip: sameAsBilling ? formData.billing_zip : (formData.shipping_zip || undefined),
-    };
-
+    // Prepare data for API - FIXED VERSION
+   const apiData: any = {
+  name: formData.name,
+  contact: formData.contact,
+  email: formData.email || "",
+  mobile: formData.mobile || "",
+  tax_number: formData.tax_number || "",
+  gst_registration_type: formData.gst_registration_type || "",
+  pan_number: formData.pan_number || "",
+  vendor_code: formData.vendor_code || "",
+  
+  // ⬇️⬇️⬇️ CONVERT THESE TO STRINGS ⬇️⬇️⬇️
+  opening_balance: formData.opening_balance ? String(parseFloat(formData.opening_balance)) : "0",
+  credit_limit: formData.credit_limit ? String(parseFloat(formData.credit_limit)) : "0",
+  credit_days: formData.credit_days ? String(parseInt(formData.credit_days)) : "0",
+  
+  opening_balance_type: formData.opening_balance_type || "",
+  opening_balance_mode: formData.opening_balance_mode || "",
+  
+  // For opening_balance_split - also convert to strings
+  opening_balance_split: formData.opening_balance_mode === "split" ? 
+    formData.opening_balance_split.map(item => ({
+      date: item.date,
+      voucher_name: item.voucher_name,
+      days: item.days ? String(parseInt(item.days)) : "0", // Convert to string
+      amount: String(parseFloat(item.amount)) // Convert to string
+    })) : [],
+  
+  // Contact persons
+  contact_persons: formData.contact_persons
+    .filter(p => p.name.trim() || p.email.trim() || p.phone.trim())
+    .map(p => ({
+      name: p.name || "",
+      email: p.email || "",
+      phone: p.phone || ""
+    })),
+  
+  // Address fields
+  billing_address: formData.billing_address || "",
+  billing_city: formData.billing_city || "",
+  billing_state: formData.billing_state || "",
+  billing_country: formData.billing_country || "India",
+  billing_zip: formData.billing_zip || "",
+  
+  shipping_address: sameAsBilling ? formData.billing_address : (formData.shipping_address || ""),
+  shipping_city: sameAsBilling ? formData.billing_city : (formData.shipping_city || ""),
+  shipping_state: sameAsBilling ? formData.billing_state : (formData.shipping_state || ""),
+  shipping_country: sameAsBilling ? formData.billing_country : (formData.shipping_country || "India"),
+  shipping_zip: sameAsBilling ? formData.billing_zip : (formData.shipping_zip || ""),
+};
+    // ⬇️⬇️⬇️ ADD THESE 2 LINES HERE ⬇️⬇️⬇️
+    console.log("=== DEBUG: API Data Being Sent ===");
+    console.log(JSON.stringify(apiData, null, 2));
+    
     await customersApi.create(company.id, apiData);
+  
     router.push("/customers");
   } catch (error: any) {
+    console.error("=== DEBUG: API Error Details ===");
+    console.error("Full error:", error);
+    console.error("Error response:", error.response?.data);
     setError(getErrorMessage(error, "Failed to create customer"));
   } finally {
     setLoading(false);

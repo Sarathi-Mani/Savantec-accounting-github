@@ -651,6 +651,16 @@ class Customer(Base):
     pan_number = Column(String(10))
     vendor_code = Column(String(50))
     
+    trade_name = Column(String(255))
+    billing_address_line1 = Column(String(255))
+    billing_address_line2 = Column(String(255))
+    billing_state_code = Column(String(2))
+    shipping_address_line1 = Column(String(255))
+    shipping_address_line2 = Column(String(255))
+    shipping_state_code = Column(String(2))
+    block_on_credit_exceed = Column(Boolean, default=False)
+    price_level_id = Column(String(36), ForeignKey("price_levels.id"))
+    interest_rate = Column(Numeric(5, 2), default=0.00)
     # Opening Balance Fields
     opening_balance = Column(Numeric(15, 2), default=0.00)
     opening_balance_type = Column(String(20))  # 'outstanding' or 'advance'
