@@ -7,6 +7,7 @@ from enum import Enum as PyEnum
 from sqlalchemy import (
     Column,
     Integer,
+    Date,
     String,
     Text,
     DateTime,
@@ -592,7 +593,6 @@ class Company(Base):
         return f"<Company {self.name}>"
 
 
-
 class OpeningBalanceTypeEnum(str, enum.Enum):
     OUTSTANDING = "outstanding"
     ADVANCE = "advance"
@@ -602,11 +602,12 @@ class OpeningBalanceModeEnum(str, enum.Enum):
     SINGLE = "single"
     SPLIT = "split"
 
+
 class OpeningBalanceItem(Base):
     __tablename__ = "opening_balance_items"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    customer_id = Column(UUID(as_uuid=True), ForeignKey("customers.id", ondelete="CASCADE"), nullable=False)
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    customer_id = Column(String(36), ForeignKey("customers.id", ondelete="CASCADE"), nullable=False)
     date = Column(Date, nullable=False)
     voucher_name = Column(String(255), nullable=False)
     days = Column(Integer)
@@ -620,8 +621,8 @@ class OpeningBalanceItem(Base):
 class ContactPerson(Base):
     __tablename__ = "contact_persons"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    customer_id = Column(UUID(as_uuid=True), ForeignKey("customers.id", ondelete="CASCADE"), nullable=False)
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    customer_id = Column(String(36), ForeignKey("customers.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(255), nullable=False)
     email = Column(String(255))
     phone = Column(String(20))
@@ -630,72 +631,68 @@ class ContactPerson(Base):
     
     customer = relationship("Customer", back_populates="contact_persons")
 
+# Find the Customer model and update it to look like this:
 
 class Customer(Base):
     __tablename__ = "customers"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    id = Column(String(36), primary_key=True, default=generate_uuid, index=True)
+    company_id = Column(String(36), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     
     # Basic Information
     name = Column(String(255), nullable=False)
     contact = Column(String(15), nullable=False)
     email = Column(String(255))
     mobile = Column(String(15))
+    
+    # Tax Information
     tax_number = Column(String(15))  # GST number
     gst_registration_type = Column(String(50))
     pan_number = Column(String(10))
     vendor_code = Column(String(50))
     
-    # Opening Balance
+    # Opening Balance Fields
     opening_balance = Column(Numeric(15, 2), default=0.00)
     opening_balance_type = Column(String(20))  # 'outstanding' or 'advance'
     opening_balance_mode = Column(String(10))  # 'single' or 'split'
+    
+    # Financial Balances
     outstanding_balance = Column(Numeric(15, 2), default=0.00)
     advance_balance = Column(Numeric(15, 2), default=0.00)
-
-# Credit Information
-    credit_limit = Column(Numeric(15, 2), default=0.00)
-    credit_days = Column(Integer, default=0)
-
-# Customer Code
-    customer_code = Column(String(50), unique=True)
-
-# Total Transactions
-    total_transactions = Column(Integer, default=0)
-
-# Add these relationships to Customer model:
-    opening_balance_items = relationship("OpeningBalanceItem", back_populates="customer", cascade="all, delete-orphan")
-    contact_persons = relationship("ContactPerson", back_populates="customer", cascade="all, delete-orphan")
     
     # Credit Information
-    credit_limit = Column(Float, default=0.0)
+    credit_limit = Column(Numeric(15, 2), default=0.00)
     credit_days = Column(Integer, default=0)
     
-    # Contact Persons
-    contact_persons = Column(JSON, default=list)  # Store as JSON array
+    # Customer Code
+    customer_code = Column(String(50), unique=True, index=True)
     
-    # Address Information
+    # Total Transactions
+    total_transactions = Column(Integer, default=0)
+    last_transaction_date = Column(Date)
+    
+    # Billing Address
     billing_address = Column(Text)
     billing_city = Column(String(100))
     billing_state = Column(String(100))
     billing_country = Column(String(100), default="India")
     billing_zip = Column(String(20))
     
+    # Shipping Address
     shipping_address = Column(Text)
     shipping_city = Column(String(100))
     shipping_state = Column(String(100))
     shipping_country = Column(String(100), default="India")
     shipping_zip = Column(String(20))
     
-    # Generated Fields
-    customer_code = Column(String(50), unique=True, index=True)
-    outstanding_balance = Column(Float, default=0.0)
-    advance_balance = Column(Float, default=0.0)
-    total_transactions = Column(Integer, default=0)
-    last_transaction_date = Column(Date)
+    # Customer Type
+    customer_type = Column(String(20), default="b2b")
     
-    # Timestamps
+    # Contact Person Info
+    contact_person_name = Column(String(255))
+    
+    # System Fields
+    is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     deleted_at = Column(DateTime)
@@ -703,33 +700,14 @@ class Customer(Base):
     # Relationships
     company = relationship("Company", back_populates="customers")
     invoices = relationship("Invoice", back_populates="customer", cascade="all, delete-orphan")
-    payments = relationship("Payment", back_populates="customer", cascade="all, delete-orphan")
     
-    @validates('contact', 'mobile')
-    def validate_phone_number(self, key, value):
-        if value:
-            digits = ''.join(filter(str.isdigit, value))
-            if len(digits) < 10:
-                raise ValueError(f'{key} must have at least 10 digits')
-        return value
+    opening_balance_items = relationship("OpeningBalanceItem", back_populates="customer", cascade="all, delete-orphan")
+    contact_persons = relationship("ContactPerson", back_populates="customer", cascade="all, delete-orphan")
+    contacts = relationship("Contact", back_populates="customer", cascade="all, delete-orphan")
     
-    @validates('pan_number')
-    def validate_pan_number(self, key, value):
-        if value:
-            import re
-            if not re.match(r'^[A-Z]{5}[0-9]{4}[A-Z]{1}$', value.upper()):
-                raise ValueError('Invalid PAN number format')
-        return value
-    
-    @validates('tax_number')
-    def validate_gst_number(self, key, value):
-        if value:
-            import re
-            value = value.upper()
-            if len(value) != 15:
-                raise ValueError('GST number must be 15 characters')
-            # Add more GST validation if needed
-        return value
+    def __repr__(self):
+        return f"<Customer(id={self.id}, name='{self.name}', company_id={self.company_id})>"
+
 
 class Product(Base):
     """Product/Service model - Unified product with inventory tracking."""
