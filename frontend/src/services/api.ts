@@ -6,7 +6,7 @@ import axios from "axios";
  */
 export function getErrorMessage(error: any, fallback: string = "An error occurred"): string {
   const detail = error.response?.data?.detail;
-
+  
   if (Array.isArray(detail)) {
     // Pydantic validation errors come as array of objects
     const firstError = detail[0];
@@ -16,7 +16,7 @@ export function getErrorMessage(error: any, fallback: string = "An error occurre
   } else if (typeof detail === "object" && detail?.msg) {
     return detail.msg;
   }
-
+  
   return error.message || fallback;
 }
 
@@ -61,6 +61,20 @@ api.interceptors.response.use(
 export interface LoginRequest {
   email: string;
   password: string;
+}
+
+// Add these interfaces after the ContactPerson interface (around line ~30)
+interface ContactPerson {
+  name: string;
+  email: string;
+  phone: string;
+}
+
+interface OpeningBalanceItem {
+  date: string;
+  voucher_name: string;
+  days?: number;
+  amount: number;
 }
 
 export interface RegisterRequest {
@@ -165,6 +179,7 @@ export interface DashboardSummary {
   };
 }
 
+// Update the Customer interface near line ~60
 export interface Customer {
   id: string;
   company_id: string;
@@ -172,10 +187,11 @@ export interface Customer {
   trade_name?: string;
   gstin?: string;
   pan?: string;
-  mobile?: string;
+  mobile?: string; 
   email?: string;
   phone?: string;
   contact_person?: string;
+  contact_persons?: ContactPerson[]; // Add this line
   billing_address_line1?: string;
   billing_address_line2?: string;
   billing_city?: string;
@@ -191,6 +207,14 @@ export interface Customer {
   shipping_pincode?: string;
   shipping_country: string;
   customer_type: string;
+  opening_balance?: number; // Add this line
+  opening_balance_type?: "outstanding" | "advance"; // Add this line
+  opening_balance_mode?: "single" | "split"; // Add this line
+  opening_balance_split?: OpeningBalanceItem[]; // Add this line
+  credit_limit?: number; // Add this line
+  credit_days?: number; // Add this line
+  vendor_code?: string; // Add this line
+  gst_registration_type?: string; // Add this line
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -198,41 +222,6 @@ export interface Customer {
 
 export interface CustomerListResponse {
   customers: Customer[];
-  total: number;
-  page: number;
-  page_size: number;
-}
-
-// Types for Brand and Category
-export interface Brand {
-  id: string;
-  name: string;
-  description?: string;
-  product_count?: number;
-  company_id: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface BrandListResponse {
-  brands: Brand[];
-  total: number;
-  page: number;
-  page_size: number;
-}
-
-export interface Category {
-  id: string;
-  name: string;
-  description?: string;
-  product_count?: number;
-  company_id: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface CategoryListResponse {
-  categories: Category[];
   total: number;
   page: number;
   page_size: number;
@@ -264,10 +253,6 @@ export interface Product {
   hsn?: string; // Add this if your backend uses `hsn` instead of `hsn_code`
   tax_rate?: number; // Add this if needed
   sales_price?: number; // Add this if needed
-  brand_id?: string;
-  category_id?: string;
-  brand?: Brand; // Optional brand object
-  category?: Category; // Optional category object
 }
 
 export interface ProductListResponse {
@@ -550,7 +535,7 @@ export const invoicesApi = {
   },
 
   cancel: async (companyId: string, invoiceId: string, reason?: string): Promise<Invoice> => {
-    const response = await api.post(`/companies/${companyId}/invoices/${invoiceId}/cancel`,
+    const response = await api.post(`/companies/${companyId}/invoices/${invoiceId}/cancel`, 
       reason ? { reason } : undefined
     );
     return response.data;
@@ -569,14 +554,14 @@ export const invoicesApi = {
   },
 
   void: async (companyId: string, invoiceId: string, reason?: string): Promise<Invoice> => {
-    const response = await api.post(`/companies/${companyId}/invoices/${invoiceId}/void`,
+    const response = await api.post(`/companies/${companyId}/invoices/${invoiceId}/void`, 
       reason ? { reason } : undefined
     );
     return response.data;
   },
 
   writeOff: async (companyId: string, invoiceId: string, reason?: string): Promise<Invoice> => {
-    const response = await api.post(`/companies/${companyId}/invoices/${invoiceId}/write-off`,
+    const response = await api.post(`/companies/${companyId}/invoices/${invoiceId}/write-off`, 
       reason ? { reason } : undefined
     );
     return response.data;
@@ -666,7 +651,42 @@ export const customersApi = {
     return response.data;
   },
 
-  create: async (companyId: string, data: Partial<Customer>): Promise<Customer> => {
+  create: async (companyId: string, data: {
+    name: string;
+    contact: string;
+    email?: string;
+    mobile?: string;
+    tax_number?: string;
+    gst_registration_type?: string;
+    pan_number?: string;
+    vendor_code?: string;
+    opening_balance?: number;
+    opening_balance_type?: "outstanding" | "advance";
+    opening_balance_mode?: "single" | "split";
+    opening_balance_split?: Array<{
+      date: string;
+      voucher_name: string;
+      days?: number;
+      amount: number;
+    }>;
+    credit_limit?: number;
+    credit_days?: number;
+    contact_persons?: Array<{
+      name: string;
+      email?: string;
+      phone?: string;
+    }>;
+    billing_address?: string;
+    billing_city?: string;
+    billing_state?: string;
+    billing_country: string;
+    billing_zip?: string;
+    shipping_address?: string;
+    shipping_city?: string;
+    shipping_state?: string;
+    shipping_country: string;
+    shipping_zip?: string;
+  }): Promise<Customer> => {
     const response = await api.post(`/companies/${companyId}/customers`, data);
     return response.data;
   },
@@ -719,89 +739,6 @@ export const vendorsApi = {
 
   delete: async (companyId: string, vendorId: string): Promise<void> => {
     await api.delete(`/companies/${companyId}/vendors/${vendorId}`);
-  },
-};
-
-
-// Brands API
-export const brandsApi = {
-  list: async (
-    companyId: string,
-    params?: {
-      page?: number;
-      page_size?: number;
-      search?: string;
-    }
-  ): Promise<BrandListResponse> => {
-    const response = await api.get(`/companies/${companyId}/brands`, { params });
-    return response.data;
-  },
-
-  search: async (companyId: string, q: string, limit = 10): Promise<Brand[]> => {
-    const response = await api.get(`/companies/${companyId}/brands/search`, {
-      params: { q, limit },
-    });
-    return response.data;
-  },
-
-  get: async (companyId: string, brandId: string): Promise<Brand> => {
-    const response = await api.get(`/companies/${companyId}/brands/${brandId}`);
-    return response.data;
-  },
-
-  create: async (companyId: string, data: { name: string; description?: string }): Promise<Brand> => {
-    const response = await api.post(`/companies/${companyId}/brands`, data);
-    return response.data;
-  },
-
-  update: async (companyId: string, brandId: string, data: Partial<Brand>): Promise<Brand> => {
-    const response = await api.put(`/companies/${companyId}/brands/${brandId}`, data);
-    return response.data;
-  },
-
-  delete: async (companyId: string, brandId: string): Promise<void> => {
-    await api.delete(`/companies/${companyId}/brands/${brandId}`);
-  },
-};
-
-// Categories API
-export const categoriesApi = {
-  list: async (
-    companyId: string,
-    params?: {
-      page?: number;
-      page_size?: number;
-      search?: string;
-    }
-  ): Promise<CategoryListResponse> => {
-    const response = await api.get(`/companies/${companyId}/categories`, { params });
-    return response.data;
-  },
-
-  search: async (companyId: string, q: string, limit = 10): Promise<Category[]> => {
-    const response = await api.get(`/companies/${companyId}/categories/search`, {
-      params: { q, limit },
-    });
-    return response.data;
-  },
-
-  get: async (companyId: string, categoryId: string): Promise<Category> => {
-    const response = await api.get(`/companies/${companyId}/categories/${categoryId}`);
-    return response.data;
-  },
-
-  create: async (companyId: string, data: { name: string; description?: string }): Promise<Category> => {
-    const response = await api.post(`/companies/${companyId}/categories`, data);
-    return response.data;
-  },
-
-  update: async (companyId: string, categoryId: string, data: Partial<Category>): Promise<Category> => {
-    const response = await api.put(`/companies/${companyId}/categories/${categoryId}`, data);
-    return response.data;
-  },
-
-  delete: async (companyId: string, categoryId: string): Promise<void> => {
-    await api.delete(`/companies/${companyId}/categories/${categoryId}`);
   },
 };
 
@@ -1036,6 +973,44 @@ export interface ProfitLossSection {
   total: number;
 }
 
+
+
+// Types for Brand and Category
+export interface Brand {
+  id: string;
+  name: string;
+  description?: string;
+  product_count?: number;
+  company_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BrandListResponse {
+  brands: Brand[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+
+export interface Category {
+  id: string;
+  name: string;
+  description?: string;
+  product_count?: number;
+  company_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CategoryListResponse {
+  categories: Category[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
 export interface ProfitLossResponse {
   from_date: string;
   to_date: string;
@@ -1243,8 +1218,8 @@ export const accountingApi = {
     formData.append("file", file);
     const response = await api.post(`/companies/${companyId}/bank-import`, formData, {
       headers: { "Content-Type": "multipart/form-data" },
-      params: {
-        bank_account_id: bankAccountId,
+      params: { 
+        bank_account_id: bankAccountId, 
         bank_name: bankName,
         ...columnMapping
       },
@@ -1468,6 +1443,7 @@ export interface SalesmanListResponse {
   page: number;
   page_size: number;
 }
+
 export interface SalesOrder {
   id: string;
   order_number: string;
@@ -1995,6 +1971,7 @@ export const purchasesApi = {
     purchase_order_id?: string;
     receipt_note_id?: string;
     notes?: string;
+    terms?: string;
     auto_receive_stock?: boolean;
     godown_id?: string;
     items: Array<{
@@ -2875,6 +2852,89 @@ export interface AlternativeForProduct {
 }
 
 // ============== Alternative Products API ==============
+
+// Brands API
+export const brandsApi = {
+  list: async (
+    companyId: string,
+    params?: {
+      page?: number;
+      page_size?: number;
+      search?: string;
+    }
+  ): Promise<BrandListResponse> => {
+    const response = await api.get(`/companies/${companyId}/brands`, { params });
+    return response.data;
+  },
+
+  search: async (companyId: string, q: string, limit = 10): Promise<Brand[]> => {
+    const response = await api.get(`/companies/${companyId}/brands/search`, {
+      params: { q, limit },
+    });
+    return response.data;
+  },
+
+  get: async (companyId: string, brandId: string): Promise<Brand> => {
+    const response = await api.get(`/companies/${companyId}/brands/${brandId}`);
+    return response.data;
+  },
+
+  create: async (companyId: string, data: { name: string; description?: string }): Promise<Brand> => {
+    const response = await api.post(`/companies/${companyId}/brands`, data);
+    return response.data;
+  },
+
+  update: async (companyId: string, brandId: string, data: Partial<Brand>): Promise<Brand> => {
+    const response = await api.put(`/companies/${companyId}/brands/${brandId}`, data);
+    return response.data;
+  },
+
+  delete: async (companyId: string, brandId: string): Promise<void> => {
+    await api.delete(`/companies/${companyId}/brands/${brandId}`);
+  },
+};
+
+
+// Categories API
+export const categoriesApi = {
+  list: async (
+    companyId: string,
+    params?: {
+      page?: number;
+      page_size?: number;
+      search?: string;
+    }
+  ): Promise<CategoryListResponse> => {
+    const response = await api.get(`/companies/${companyId}/categories`, { params });
+    return response.data;
+  },
+
+  search: async (companyId: string, q: string, limit = 10): Promise<Category[]> => {
+    const response = await api.get(`/companies/${companyId}/categories/search`, {
+      params: { q, limit },
+    });
+    return response.data;
+  },
+
+  get: async (companyId: string, categoryId: string): Promise<Category> => {
+    const response = await api.get(`/companies/${companyId}/categories/${categoryId}`);
+    return response.data;
+  },
+
+  create: async (companyId: string, data: { name: string; description?: string }): Promise<Category> => {
+    const response = await api.post(`/companies/${companyId}/categories`, data);
+    return response.data;
+  },
+
+  update: async (companyId: string, categoryId: string, data: Partial<Category>): Promise<Category> => {
+    const response = await api.put(`/companies/${companyId}/categories/${categoryId}`, data);
+    return response.data;
+  },
+
+  delete: async (companyId: string, categoryId: string): Promise<void> => {
+    await api.delete(`/companies/${companyId}/categories/${categoryId}`);
+  },
+};
 
 export const alternativeProductsApi = {
   list: async (

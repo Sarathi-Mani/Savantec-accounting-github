@@ -1,6 +1,8 @@
 """SQLAlchemy database models for GST Invoice application."""
 from datetime import datetime
 from decimal import Decimal
+
+import enum
 from enum import Enum as PyEnum
 from sqlalchemy import (
     Column,
@@ -462,6 +464,41 @@ class User(Base):
     def __repr__(self):
         return f"<User {self.email}>"
 
+
+class Brand(Base):
+    """Brand model for items."""
+    __tablename__ = "brands"
+    
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    name = Column(String(100), nullable=False)
+    status = Column(Boolean, default=True)
+    created_by = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    creator = relationship("User")
+    
+    def __repr__(self):
+        return f"<Brand(id={self.id}, name='{self.name}')>"
+
+
+class Category(Base):
+    """Category model for items."""
+    __tablename__ = "categories"
+    
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    name = Column(String(100), nullable=False)
+    status = Column(Boolean, default=True)
+    created_by = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    creator = relationship("User")
+    
+    def __repr__(self):
+        return f"<Category(id={self.id}, name='{self.name}')>"
+
+
 class Tax(Base):
     """Tax model for items."""
     __tablename__ = "taxes"
@@ -546,9 +583,6 @@ class Company(Base):
     transactions = relationship("Transaction", back_populates="company", cascade="all, delete-orphan")
     bank_imports = relationship("BankImport", back_populates="company", cascade="all, delete-orphan")
     
-    brands = relationship("Brand", back_populates="company", cascade="all, delete-orphan")
-    categories = relationship("Category", back_populates="company", cascade="all, delete-orphan")
-
     __table_args__ = (
         Index("idx_company_user", "user_id"),
         Index("idx_company_gstin", "gstin"),
@@ -558,66 +592,144 @@ class Company(Base):
         return f"<Company {self.name}>"
 
 
+
+class OpeningBalanceTypeEnum(str, enum.Enum):
+    OUTSTANDING = "outstanding"
+    ADVANCE = "advance"
+
+
+class OpeningBalanceModeEnum(str, enum.Enum):
+    SINGLE = "single"
+    SPLIT = "split"
+
+class OpeningBalanceItem(Base):
+    __tablename__ = "opening_balance_items"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    customer_id = Column(UUID(as_uuid=True), ForeignKey("customers.id", ondelete="CASCADE"), nullable=False)
+    date = Column(Date, nullable=False)
+    voucher_name = Column(String(255), nullable=False)
+    days = Column(Integer)
+    amount = Column(Numeric(15, 2), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    customer = relationship("Customer", back_populates="opening_balance_items")
+
+
+class ContactPerson(Base):
+    __tablename__ = "contact_persons"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    customer_id = Column(UUID(as_uuid=True), ForeignKey("customers.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(255), nullable=False)
+    email = Column(String(255))
+    phone = Column(String(20))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    customer = relationship("Customer", back_populates="contact_persons")
+
+
 class Customer(Base):
-    """Customer model - clients/customers of a company."""
     __tablename__ = "customers"
 
-    id = Column(String(36), primary_key=True, default=generate_uuid)
-    company_id = Column(String(36), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     
-    # Customer details
+    # Basic Information
     name = Column(String(255), nullable=False)
-    contact = Column(String(20), nullable=False)  # Primary contact
+    contact = Column(String(15), nullable=False)
     email = Column(String(255))
-    mobile = Column(String(20))  # Additional mobile
-    
-    # Tax Information
-    tax_number = Column(String(15), index=True)  # GST Number
-    gst_registration_type = Column(String(50))  # GST Registration Type
-    pan_number = Column(String(10))  # PAN Number
-    
-    # Company/Vendor Information
+    mobile = Column(String(15))
+    tax_number = Column(String(15))  # GST number
+    gst_registration_type = Column(String(50))
+    pan_number = Column(String(10))
     vendor_code = Column(String(50))
     
-    # Financial Information
-    opening_balance = Column(Numeric(15, 2), default=0)
-    opening_balance_type = Column(String(20), default="outstanding")  # outstanding or advance
-    credit_limit = Column(Numeric(15, 2))
+    # Opening Balance
+    opening_balance = Column(Numeric(15, 2), default=0.00)
+    opening_balance_type = Column(String(20))  # 'outstanding' or 'advance'
+    opening_balance_mode = Column(String(10))  # 'single' or 'split'
+    outstanding_balance = Column(Numeric(15, 2), default=0.00)
+    advance_balance = Column(Numeric(15, 2), default=0.00)
+
+# Credit Information
+    credit_limit = Column(Numeric(15, 2), default=0.00)
+    credit_days = Column(Integer, default=0)
+
+# Customer Code
+    customer_code = Column(String(50), unique=True)
+
+# Total Transactions
+    total_transactions = Column(Integer, default=0)
+
+# Add these relationships to Customer model:
+    opening_balance_items = relationship("OpeningBalanceItem", back_populates="customer", cascade="all, delete-orphan")
+    contact_persons = relationship("ContactPerson", back_populates="customer", cascade="all, delete-orphan")
+    
+    # Credit Information
+    credit_limit = Column(Float, default=0.0)
     credit_days = Column(Integer, default=0)
     
-    # Billing Address
+    # Contact Persons
+    contact_persons = Column(JSON, default=list)  # Store as JSON array
+    
+    # Address Information
     billing_address = Column(Text)
     billing_city = Column(String(100))
     billing_state = Column(String(100))
     billing_country = Column(String(100), default="India")
-    billing_zip = Column(String(10))
+    billing_zip = Column(String(20))
     
-    # Shipping Address
     shipping_address = Column(Text)
     shipping_city = Column(String(100))
     shipping_state = Column(String(100))
     shipping_country = Column(String(100), default="India")
-    shipping_zip = Column(String(10))
+    shipping_zip = Column(String(20))
     
-    # Additional flags
-    is_active = Column(Boolean, default=True)
+    # Generated Fields
+    customer_code = Column(String(50), unique=True, index=True)
+    outstanding_balance = Column(Float, default=0.0)
+    advance_balance = Column(Float, default=0.0)
+    total_transactions = Column(Integer, default=0)
+    last_transaction_date = Column(Date)
+    
+    # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
+    deleted_at = Column(DateTime)
+    
     # Relationships
     company = relationship("Company", back_populates="customers")
-    invoices = relationship("Invoice", back_populates="customer")
-    contacts = relationship("Contact", back_populates="customer", cascade="all, delete-orphan")
-
-    __table_args__ = (
-        Index("idx_customer_company", "company_id"),
-        Index("idx_customer_tax", "tax_number"),
-        Index("idx_customer_vendor", "vendor_code"),
-    )
-
-    def __repr__(self):
-        return f"<Customer {self.name}>"
-
+    invoices = relationship("Invoice", back_populates="customer", cascade="all, delete-orphan")
+    payments = relationship("Payment", back_populates="customer", cascade="all, delete-orphan")
+    
+    @validates('contact', 'mobile')
+    def validate_phone_number(self, key, value):
+        if value:
+            digits = ''.join(filter(str.isdigit, value))
+            if len(digits) < 10:
+                raise ValueError(f'{key} must have at least 10 digits')
+        return value
+    
+    @validates('pan_number')
+    def validate_pan_number(self, key, value):
+        if value:
+            import re
+            if not re.match(r'^[A-Z]{5}[0-9]{4}[A-Z]{1}$', value.upper()):
+                raise ValueError('Invalid PAN number format')
+        return value
+    
+    @validates('tax_number')
+    def validate_gst_number(self, key, value):
+        if value:
+            import re
+            value = value.upper()
+            if len(value) != 15:
+                raise ValueError('GST number must be 15 characters')
+            # Add more GST validation if needed
+        return value
 
 class Product(Base):
     """Product/Service model - Unified product with inventory tracking."""
@@ -628,10 +740,10 @@ class Product(Base):
     item_group = Column(String(200), default="single")
     hsn = Column(String(50), nullable=True)
     barcode = Column(String(100), nullable=True, index=True)
-    brand = Column(String(100), nullable=True)  # Keep as string
+    brand = Column(String(100), nullable=True)
     unit = Column(String(50), nullable=True)
     alert_quantity = Column(Integer, default=0)
-    category = Column(String(100), nullable=True)  # Keep as string
+    category = Column(String(100), nullable=True)
     description = Column(Text, nullable=True)
     discount_type = Column(discount_type_enum, default='percentage')
     discount = Column(Numeric(15, 2), default=0.00)
@@ -654,27 +766,25 @@ class Product(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     deleted_at = Column(DateTime, nullable=True)
     
+    # ADD this column if not present
     stock_group_id = Column(String(36), ForeignKey("stock_groups.id", ondelete="SET NULL"), index=True)
     is_active = Column(Boolean, default=True, index=True)
 
-    # Relationships
+    # Relationships - FIXED
     company = relationship("Company", back_populates="items")
     tax = relationship("Tax", back_populates="items")
     creator = relationship("User", back_populates="items")
     stock_group = relationship("StockGroup", back_populates="items")
-    
-    # REMOVE THESE since we removed the relationships from Brand and Category:
-    # brand_rel = relationship("Brand", back_populates="products")
-    # category_rel = relationship("Category", back_populates="products")
-    
     batches = relationship("Batch", back_populates="product", cascade="all, delete-orphan")
     bom_components = relationship("BOMComponent", back_populates="component_product", cascade="all, delete-orphan")
+    
+    # Add the missing relationship for stock_entries
     stock_entries = relationship("StockEntry", back_populates="product", cascade="all, delete-orphan")
     alternative_mappings = relationship("ProductAlternativeMapping", back_populates="product", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<Item(id={self.id}, name='{self.name}', sku='{self.sku}')>"
-        
+
 
 class AlternativeProduct(Base):
     """Alternative/Competitor Product model - Reference only, no inventory tracking."""

@@ -11,6 +11,13 @@ interface ContactPerson {
   phone: string;
 }
 
+interface OpeningBalanceItem {
+  date: string;
+  voucher_name: string;
+  days: string;
+  amount: string;
+}
+
 interface FormData {
   // Basic Info
   name: string;
@@ -25,6 +32,8 @@ interface FormData {
   // Opening Balance
   opening_balance: string;
   opening_balance_type: "outstanding" | "advance";
+  opening_balance_mode: "single" | "split";
+  opening_balance_split: OpeningBalanceItem[];
   
   // Additional Info
   credit_limit: string;
@@ -70,6 +79,7 @@ export default function CreateCustomerPage() {
   const [error, setError] = useState<string | null>(null);
   const [sameAsBilling, setSameAsBilling] = useState(false);
   const [showGstOptions, setShowGstOptions] = useState(false);
+  const [showOpeningBalanceSplit, setShowOpeningBalanceSplit] = useState(false);
 
   const [formData, setFormData] = useState<FormData>({
     // Basic Info
@@ -85,6 +95,8 @@ export default function CreateCustomerPage() {
     // Opening Balance
     opening_balance: "",
     opening_balance_type: "outstanding",
+    opening_balance_mode: "single",
+    opening_balance_split: [],
     
     // Additional Info
     credit_limit: "",
@@ -135,6 +147,50 @@ export default function CreateCustomerPage() {
       const updatedContactPersons = formData.contact_persons.filter((_, i) => i !== index);
       setFormData(prev => ({ ...prev, contact_persons: updatedContactPersons }));
     }
+  };
+
+  const handleOpeningBalanceItemChange = (index: number, field: keyof OpeningBalanceItem, value: string) => {
+    const updatedItems = [...formData.opening_balance_split];
+    updatedItems[index] = {
+      ...updatedItems[index],
+      [field]: value
+    };
+    setFormData(prev => ({ ...prev, opening_balance_split: updatedItems }));
+    
+    // Calculate total amount
+    if (field === 'amount') {
+      const total = updatedItems.reduce((sum, item) => {
+        return sum + (parseFloat(item.amount) || 0);
+      }, 0);
+      setFormData(prev => ({ 
+        ...prev, 
+        opening_balance_split: updatedItems,
+        opening_balance: total.toFixed(2)
+      }));
+    }
+  };
+
+  const addOpeningBalanceItem = () => {
+    setFormData(prev => ({
+      ...prev,
+      opening_balance_split: [
+        ...prev.opening_balance_split,
+        { date: "", voucher_name: "", days: "", amount: "" }
+      ]
+    }));
+  };
+
+  const removeOpeningBalanceItem = (index: number) => {
+    const updatedItems = formData.opening_balance_split.filter((_, i) => i !== index);
+    const total = updatedItems.reduce((sum, item) => {
+      return sum + (parseFloat(item.amount) || 0);
+    }, 0);
+    
+    setFormData(prev => ({ 
+      ...prev, 
+      opening_balance_split: updatedItems,
+      opening_balance: total.toFixed(2)
+    }));
   };
 
   const copyBillingToShipping = () => {
@@ -197,10 +253,54 @@ export default function CreateCustomerPage() {
       }
     }
 
-    // Validate opening balance is a valid number if provided
-    if (formData.opening_balance && isNaN(parseFloat(formData.opening_balance))) {
-      setError("Please enter a valid opening balance amount");
-      return false;
+    // Validate opening balance items if in split mode
+    if (formData.opening_balance_mode === "split") {
+      if (formData.opening_balance_split.length === 0) {
+        setError("Please add at least one opening balance item in split mode");
+        return false;
+      }
+      
+      let totalAmount = 0;
+      for (const [index, item] of formData.opening_balance_split.entries()) {
+        // Validate date
+        if (!item.date) {
+          setError(`Please select a date for item ${index + 1}`);
+          return false;
+        }
+        
+        // Validate voucher name
+        if (!item.voucher_name.trim()) {
+          setError(`Please enter a voucher name for item ${index + 1}`);
+          return false;
+        }
+        
+        // Validate days
+        if (item.days && isNaN(parseInt(item.days))) {
+          setError(`Please enter valid days for item ${index + 1}`);
+          return false;
+        }
+        
+        // Validate amount
+        const amount = parseFloat(item.amount);
+        if (!item.amount || isNaN(amount) || amount <= 0) {
+          setError(`Please enter a valid amount for item ${index + 1}`);
+          return false;
+        }
+        
+        totalAmount += amount;
+      }
+      
+      // Update the total opening balance from split items
+      setFormData(prev => ({
+        ...prev,
+        opening_balance: totalAmount.toFixed(2)
+      }));
+    } else {
+      // Single mode validation
+      if (formData.opening_balance && isNaN(parseFloat(formData.opening_balance))) {
+        setError("Please enter a valid opening balance amount");
+        return false;
+      }
     }
 
     // Validate contact persons emails
@@ -239,56 +339,72 @@ export default function CreateCustomerPage() {
     setShowGstOptions(false);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!company?.id) {
-      setError("Please select a company first");
-      return;
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  
+  if (!company?.id) {
+    setError("Please select a company first");
+    return;
+  }
+
+  if (!validateForm()) {
+    return;
+  }
+
+  setLoading(true);
+  setError(null);
+
+  try {
+    // Prepare data for API
+    const apiData = {
+      name: formData.name,
+      contact: formData.contact,
+      email: formData.email || undefined,
+      mobile: formData.mobile || undefined,
+      tax_number: formData.tax_number || undefined,
+      gst_registration_type: formData.gst_registration_type || undefined,
+      pan_number: formData.pan_number || undefined,
+      vendor_code: formData.vendor_code || undefined,
+      opening_balance: formData.opening_balance ? parseFloat(formData.opening_balance) : undefined,
+      opening_balance_type: formData.opening_balance_type || undefined,
+      opening_balance_mode: formData.opening_balance_mode || undefined,
+      opening_balance_split: formData.opening_balance_mode === "split" ? 
+        formData.opening_balance_split.map(item => ({
+          date: item.date,
+          voucher_name: item.voucher_name,
+          days: item.days ? parseInt(item.days) : undefined, // Convert string to number
+          amount: parseFloat(item.amount)
+        })) : undefined,
+      credit_limit: formData.credit_limit ? parseFloat(formData.credit_limit) : undefined,
+      credit_days: formData.credit_days ? parseInt(formData.credit_days) : undefined,
+      contact_persons: formData.contact_persons.filter(p => p.name.trim() || p.email.trim() || p.phone.trim()),
+      billing_address: formData.billing_address || undefined,
+      billing_city: formData.billing_city || undefined,
+      billing_state: formData.billing_state || undefined,
+      billing_country: formData.billing_country,
+      billing_zip: formData.billing_zip || undefined,
+      shipping_address: sameAsBilling ? formData.billing_address : (formData.shipping_address || undefined),
+      shipping_city: sameAsBilling ? formData.billing_city : (formData.shipping_city || undefined),
+      shipping_state: sameAsBilling ? formData.billing_state : (formData.shipping_state || undefined),
+      shipping_country: sameAsBilling ? formData.billing_country : formData.shipping_country,
+      shipping_zip: sameAsBilling ? formData.billing_zip : (formData.shipping_zip || undefined),
+    };
+
+    await customersApi.create(company.id, apiData);
+    router.push("/customers");
+  } catch (error: any) {
+    setError(getErrorMessage(error, "Failed to create customer"));
+  } finally {
+    setLoading(false);
+  }
+};
+  const calculateTotalOpeningBalance = () => {
+    if (formData.opening_balance_mode === "split") {
+      return formData.opening_balance_split.reduce((sum, item) => {
+        return sum + (parseFloat(item.amount) || 0);
+      }, 0);
     }
-
-    if (!validateForm()) {
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      // Prepare data for API
-      const apiData = {
-        name: formData.name,
-        contact: formData.contact,
-        email: formData.email || undefined,
-        mobile: formData.mobile || undefined,
-        tax_number: formData.tax_number || undefined,
-        gst_registration_type: formData.gst_registration_type || undefined,
-        pan_number: formData.pan_number || undefined,
-        vendor_code: formData.vendor_code || undefined,
-        opening_balance: formData.opening_balance ? parseFloat(formData.opening_balance) : undefined,
-        opening_balance_type: formData.opening_balance_type || undefined,
-        credit_limit: formData.credit_limit ? parseFloat(formData.credit_limit) : undefined,
-        credit_days: formData.credit_days ? parseInt(formData.credit_days) : undefined,
-        contact_persons: formData.contact_persons.filter(p => p.name.trim() || p.email.trim() || p.phone.trim()),
-        billing_address: formData.billing_address || undefined,
-        billing_city: formData.billing_city || undefined,
-        billing_state: formData.billing_state || undefined,
-        billing_country: formData.billing_country,
-        billing_zip: formData.billing_zip || undefined,
-        shipping_address: sameAsBilling ? formData.billing_address : (formData.shipping_address || undefined),
-        shipping_city: sameAsBilling ? formData.billing_city : (formData.shipping_city || undefined),
-        shipping_state: sameAsBilling ? formData.billing_state : (formData.shipping_state || undefined),
-        shipping_country: sameAsBilling ? formData.billing_country : formData.shipping_country,
-        shipping_zip: sameAsBilling ? formData.billing_zip : (formData.shipping_zip || undefined),
-      };
-
-      await customersApi.create(company.id, apiData);
-      router.push("/customers");
-    } catch (error: any) {
-      setError(getErrorMessage(error, "Failed to create customer"));
-    } finally {
-      setLoading(false);
-    }
+    return parseFloat(formData.opening_balance) || 0;
   };
 
   if (!company) {
@@ -483,41 +599,194 @@ export default function CreateCustomerPage() {
                     )}
                   </div>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
 
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="mb-2 block text-sm font-medium text-dark dark:text-white">
-                      Opening Balance
-                    </label>
+        {/* Opening Balance Section */}
+        <div className="rounded-lg bg-white p-6 shadow-1 dark:bg-gray-dark">
+          <h2 className="mb-4 text-lg font-semibold text-dark dark:text-white">Opening Balance</h2>
+          
+          <div className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-dark dark:text-white">
+                  Opening Balance Mode
+                </label>
+                <div className="flex gap-4">
+                  <label className="flex items-center">
                     <input
-                      type="number"
-                      name="opening_balance"
-                      value={formData.opening_balance}
+                      type="radio"
+                      name="opening_balance_mode"
+                      value="single"
+                      checked={formData.opening_balance_mode === "single"}
                       onChange={handleChange}
-                      placeholder="0.00"
-                      step="0.01"
-                      min="0"
-                      className="w-full rounded-lg border border-stroke bg-transparent px-4 py-3 outline-none focus:border-primary dark:border-dark-3"
+                      className="mr-2"
                     />
-                  </div>
-
-                  <div>
-                    <label className="mb-2 block text-sm font-medium text-dark dark:text-white">
-                      Balance Type
-                    </label>
-                    <select
-                      name="opening_balance_type"
-                      value={formData.opening_balance_type}
+                    Single Amount
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      name="opening_balance_mode"
+                      value="split"
+                      checked={formData.opening_balance_mode === "split"}
                       onChange={handleChange}
-                      className="w-full rounded-lg border border-stroke bg-transparent px-4 py-3 outline-none focus:border-primary dark:border-dark-3"
+                      className="mr-2"
+                    />
+                    Bill-wise Split
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-dark dark:text-white">
+                  Balance Type
+                </label>
+                <select
+                  name="opening_balance_type"
+                  value={formData.opening_balance_type}
+                  onChange={handleChange}
+                  className="w-full rounded-lg border border-stroke bg-transparent px-4 py-3 outline-none focus:border-primary dark:border-dark-3"
+                >
+                  <option value="outstanding">Outstanding (Customer Owes)</option>
+                  <option value="advance">Advance (You Owe Customer)</option>
+                </select>
+              </div>
+            </div>
+
+            {formData.opening_balance_mode === "single" ? (
+              <div>
+                <label className="mb-2 block text-sm font-medium text-dark dark:text-white">
+                  Opening Balance Amount
+                </label>
+                <input
+                  type="number"
+                  name="opening_balance"
+                  value={formData.opening_balance}
+                  onChange={handleChange}
+                  placeholder="0.00"
+                  step="0.01"
+                  min="0"
+                  className="w-full rounded-lg border border-stroke bg-transparent px-4 py-3 outline-none focus:border-primary dark:border-dark-3"
+                />
+              </div>
+            ) : (
+              <div>
+                <div className="mb-4 flex items-center justify-between">
+                  <h3 className="font-medium text-dark dark:text-white">Bill-wise Opening Balance Items</h3>
+                  <button
+                    type="button"
+                    onClick={addOpeningBalanceItem}
+                    className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition hover:bg-opacity-90"
+                  >
+                    <span>+</span> Add Item
+                  </button>
+                </div>
+
+                {formData.opening_balance_split.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-stroke p-8 text-center dark:border-dark-3">
+                    <p className="text-dark-6">No opening balance items added</p>
+                    <button
+                      type="button"
+                      onClick={addOpeningBalanceItem}
+                      className="mt-2 inline-flex items-center gap-2 text-primary hover:underline"
                     >
-                      <option value="outstanding">Outstanding (Customer Owes)</option>
-                      <option value="advance">Advance (You Owe Customer)</option>
-                    </select>
+                      <span>+</span> Add your first item
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {formData.opening_balance_split.map((item, index) => (
+                      <div
+                        key={index}
+                        className="rounded-lg border border-stroke p-4 transition hover:border-primary dark:border-dark-3"
+                      >
+                        <div className="grid items-center gap-4 md:grid-cols-12">
+                          <div className="md:col-span-11">
+                            <div className="grid gap-4 sm:grid-cols-4">
+                              <div>
+                                <label className="mb-2 block text-sm font-medium text-dark dark:text-white">
+                                  {index === 0 ? "Date" : ""}
+                                </label>
+                                <input
+                                  type="date"
+                                  value={item.date}
+                                  onChange={(e) => handleOpeningBalanceItemChange(index, "date", e.target.value)}
+                                  className="w-full rounded-lg border border-stroke bg-transparent px-4 py-2 outline-none focus:border-primary dark:border-dark-3"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="mb-2 block text-sm font-medium text-dark dark:text-white">
+                                  {index === 0 ? "Voucher Name" : ""}
+                                </label>
+                                <input
+                                  type="text"
+                                  value={item.voucher_name}
+                                  onChange={(e) => handleOpeningBalanceItemChange(index, "voucher_name", e.target.value)}
+                                  placeholder="Enter voucher name"
+                                  className="w-full rounded-lg border border-stroke bg-transparent px-4 py-2 outline-none focus:border-primary dark:border-dark-3"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="mb-2 block text-sm font-medium text-dark dark:text-white">
+                                  {index === 0 ? "Days" : ""}
+                                </label>
+                                <input
+                                  type="number"
+                                  value={item.days}
+                                  onChange={(e) => handleOpeningBalanceItemChange(index, "days", e.target.value)}
+                                  placeholder="Enter days"
+                                  min="0"
+                                  className="w-full rounded-lg border border-stroke bg-transparent px-4 py-2 outline-none focus:border-primary dark:border-dark-3"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="mb-2 block text-sm font-medium text-dark dark:text-white">
+                                  {index === 0 ? "Amount" : ""}
+                                </label>
+                                <input
+                                  type="number"
+                                  value={item.amount}
+                                  onChange={(e) => handleOpeningBalanceItemChange(index, "amount", e.target.value)}
+                                  placeholder="0.00"
+                                  step="0.01"
+                                  min="0"
+                                  className="w-full rounded-lg border border-stroke bg-transparent px-4 py-2 outline-none focus:border-primary dark:border-dark-3"
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="md:col-span-1 flex items-center justify-center">
+                            <button
+                              type="button"
+                              onClick={() => removeOpeningBalanceItem(index)}
+                              className="rounded-lg bg-red-500 p-2 text-white transition hover:bg-red-600"
+                            >
+                              <span>−</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="mt-4 rounded-lg bg-gray-50 p-4 dark:bg-dark-3">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-dark dark:text-white">Total Opening Balance:</span>
+                    <span className="text-lg font-semibold text-primary">
+                      ₹{calculateTotalOpeningBalance().toFixed(2)}
+                    </span>
                   </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
 
