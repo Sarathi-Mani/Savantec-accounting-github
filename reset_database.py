@@ -10,7 +10,7 @@ from app.database.connection import engine, Base
 
 # Import all models to register them with Base
 from app.database.models import (
-    User, Company, BankAccount, Customer, Product, Invoice, InvoiceItem, Payment,
+    User, Company, BankAccount, Customer, Brand, Category, Product, Invoice, InvoiceItem, Payment,
     Account, Transaction, TransactionEntry, BankImport, BankImportRow,
     StockGroup, Godown, Batch, StockEntry, BillOfMaterial, BOMComponent,
     SalesOrder, SalesOrderItem, PurchaseOrder, PurchaseOrderItem,

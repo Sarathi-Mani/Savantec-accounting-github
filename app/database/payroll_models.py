@@ -183,6 +183,25 @@ class Employee(Base):
     emergency_contact_name = Column(String(255))
     emergency_contact_phone = Column(String(20))
     
+    # Family details
+    father_name = Column(String(100))
+    mother_name = Column(String(100))
+    spouse_name = Column(String(100))
+    spouse_occupation = Column(String(100))
+    children_count = Column(Integer, default=0)
+    children_details = Column(Text)
+    emergency_contact_relation = Column(String(50))
+
+    # Additional contact
+    personal_email = Column(String(255))
+    official_email = Column(String(255))
+    personal_phone = Column(String(20))
+    official_phone = Column(String(20))
+    alternate_phone = Column(String(20))
+
+    # Account holder name
+    account_holder_name = Column(String(255))
+    
     # Address
     current_address = Column(Text)
     current_city = Column(String(100))

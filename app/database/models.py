@@ -462,41 +462,6 @@ class User(Base):
     def __repr__(self):
         return f"<User {self.email}>"
 
-
-class Brand(Base):
-    """Brand model for items."""
-    __tablename__ = "brands"
-    
-    id = Column(String(36), primary_key=True, default=generate_uuid)
-    name = Column(String(100), nullable=False)
-    status = Column(Boolean, default=True)
-    created_by = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    
-    # Relationships
-    creator = relationship("User")
-    
-    def __repr__(self):
-        return f"<Brand(id={self.id}, name='{self.name}')>"
-
-
-class Category(Base):
-    """Category model for items."""
-    __tablename__ = "categories"
-    
-    id = Column(String(36), primary_key=True, default=generate_uuid)
-    name = Column(String(100), nullable=False)
-    status = Column(Boolean, default=True)
-    created_by = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    
-    # Relationships
-    creator = relationship("User")
-    
-    def __repr__(self):
-        return f"<Category(id={self.id}, name='{self.name}')>"
-
-
 class Tax(Base):
     """Tax model for items."""
     __tablename__ = "taxes"
@@ -581,6 +546,9 @@ class Company(Base):
     transactions = relationship("Transaction", back_populates="company", cascade="all, delete-orphan")
     bank_imports = relationship("BankImport", back_populates="company", cascade="all, delete-orphan")
     
+    brands = relationship("Brand", back_populates="company", cascade="all, delete-orphan")
+    categories = relationship("Category", back_populates="company", cascade="all, delete-orphan")
+
     __table_args__ = (
         Index("idx_company_user", "user_id"),
         Index("idx_company_gstin", "gstin"),
@@ -656,6 +624,53 @@ class Customer(Base):
         return f"<Customer {self.name}>"
 
 
+
+class Brand(Base):
+    """Brand model."""
+    __tablename__ = "brands"
+    
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    name = Column(String(191), nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    company_id = Column(String(36), ForeignKey("companies.id"), nullable=False, index=True)
+    created_by = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    deleted_at = Column(DateTime, nullable=True)
+    is_active = Column(Boolean, default=True, index=True)
+    
+    # Relationships
+    company = relationship("Company", back_populates="brands")
+    creator = relationship("User", back_populates="brands")
+    # REMOVE THIS: products = relationship("Product", back_populates="brand_rel", cascade="all, delete-orphan")
+    
+    def __repr__(self):
+        return f"<Brand(id={self.id}, name='{self.name}')>"
+
+
+class Category(Base):
+    """Category model."""
+    __tablename__ = "categories"
+    
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    name = Column(String(191), nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    company_id = Column(String(36), ForeignKey("companies.id"), nullable=False, index=True)
+    created_by = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    deleted_at = Column(DateTime, nullable=True)
+    is_active = Column(Boolean, default=True, index=True)
+    
+    # Relationships
+    company = relationship("Company", back_populates="categories")
+    creator = relationship("User", back_populates="categories")
+    # REMOVE THIS: products = relationship("Product", back_populates="category_rel", cascade="all, delete-orphan")
+    
+    def __repr__(self):
+        return f"<Category(id={self.id}, name='{self.name}')>"
+
+
 class Product(Base):
     """Product/Service model - Unified product with inventory tracking."""
     __tablename__ = "items"
@@ -665,10 +680,10 @@ class Product(Base):
     item_group = Column(String(200), default="single")
     hsn = Column(String(50), nullable=True)
     barcode = Column(String(100), nullable=True, index=True)
-    brand = Column(String(100), nullable=True)
+    brand = Column(String(100), nullable=True)  # Keep as string
     unit = Column(String(50), nullable=True)
     alert_quantity = Column(Integer, default=0)
-    category = Column(String(100), nullable=True)
+    category = Column(String(100), nullable=True)  # Keep as string
     description = Column(Text, nullable=True)
     discount_type = Column(discount_type_enum, default='percentage')
     discount = Column(Numeric(15, 2), default=0.00)
@@ -691,25 +706,27 @@ class Product(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     deleted_at = Column(DateTime, nullable=True)
     
-    # ADD this column if not present
     stock_group_id = Column(String(36), ForeignKey("stock_groups.id", ondelete="SET NULL"), index=True)
     is_active = Column(Boolean, default=True, index=True)
 
-    # Relationships - FIXED
+    # Relationships
     company = relationship("Company", back_populates="items")
     tax = relationship("Tax", back_populates="items")
     creator = relationship("User", back_populates="items")
     stock_group = relationship("StockGroup", back_populates="items")
+    
+    # REMOVE THESE since we removed the relationships from Brand and Category:
+    # brand_rel = relationship("Brand", back_populates="products")
+    # category_rel = relationship("Category", back_populates="products")
+    
     batches = relationship("Batch", back_populates="product", cascade="all, delete-orphan")
     bom_components = relationship("BOMComponent", back_populates="component_product", cascade="all, delete-orphan")
-    
-    # Add the missing relationship for stock_entries
     stock_entries = relationship("StockEntry", back_populates="product", cascade="all, delete-orphan")
     alternative_mappings = relationship("ProductAlternativeMapping", back_populates="product", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<Item(id={self.id}, name='{self.name}', sku='{self.sku}')>"
-
+        
 
 class AlternativeProduct(Base):
     """Alternative/Competitor Product model - Reference only, no inventory tracking."""

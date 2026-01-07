@@ -6,7 +6,7 @@ import axios from "axios";
  */
 export function getErrorMessage(error: any, fallback: string = "An error occurred"): string {
   const detail = error.response?.data?.detail;
-  
+
   if (Array.isArray(detail)) {
     // Pydantic validation errors come as array of objects
     const firstError = detail[0];
@@ -16,7 +16,7 @@ export function getErrorMessage(error: any, fallback: string = "An error occurre
   } else if (typeof detail === "object" && detail?.msg) {
     return detail.msg;
   }
-  
+
   return error.message || fallback;
 }
 
@@ -172,7 +172,7 @@ export interface Customer {
   trade_name?: string;
   gstin?: string;
   pan?: string;
-  mobile?: string; 
+  mobile?: string;
   email?: string;
   phone?: string;
   contact_person?: string;
@@ -198,6 +198,41 @@ export interface Customer {
 
 export interface CustomerListResponse {
   customers: Customer[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+// Types for Brand and Category
+export interface Brand {
+  id: string;
+  name: string;
+  description?: string;
+  product_count?: number;
+  company_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BrandListResponse {
+  brands: Brand[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface Category {
+  id: string;
+  name: string;
+  description?: string;
+  product_count?: number;
+  company_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CategoryListResponse {
+  categories: Category[];
   total: number;
   page: number;
   page_size: number;
@@ -229,6 +264,10 @@ export interface Product {
   hsn?: string; // Add this if your backend uses `hsn` instead of `hsn_code`
   tax_rate?: number; // Add this if needed
   sales_price?: number; // Add this if needed
+  brand_id?: string;
+  category_id?: string;
+  brand?: Brand; // Optional brand object
+  category?: Category; // Optional category object
 }
 
 export interface ProductListResponse {
@@ -511,7 +550,7 @@ export const invoicesApi = {
   },
 
   cancel: async (companyId: string, invoiceId: string, reason?: string): Promise<Invoice> => {
-    const response = await api.post(`/companies/${companyId}/invoices/${invoiceId}/cancel`, 
+    const response = await api.post(`/companies/${companyId}/invoices/${invoiceId}/cancel`,
       reason ? { reason } : undefined
     );
     return response.data;
@@ -530,14 +569,14 @@ export const invoicesApi = {
   },
 
   void: async (companyId: string, invoiceId: string, reason?: string): Promise<Invoice> => {
-    const response = await api.post(`/companies/${companyId}/invoices/${invoiceId}/void`, 
+    const response = await api.post(`/companies/${companyId}/invoices/${invoiceId}/void`,
       reason ? { reason } : undefined
     );
     return response.data;
   },
 
   writeOff: async (companyId: string, invoiceId: string, reason?: string): Promise<Invoice> => {
-    const response = await api.post(`/companies/${companyId}/invoices/${invoiceId}/write-off`, 
+    const response = await api.post(`/companies/${companyId}/invoices/${invoiceId}/write-off`,
       reason ? { reason } : undefined
     );
     return response.data;
@@ -680,6 +719,89 @@ export const vendorsApi = {
 
   delete: async (companyId: string, vendorId: string): Promise<void> => {
     await api.delete(`/companies/${companyId}/vendors/${vendorId}`);
+  },
+};
+
+
+// Brands API
+export const brandsApi = {
+  list: async (
+    companyId: string,
+    params?: {
+      page?: number;
+      page_size?: number;
+      search?: string;
+    }
+  ): Promise<BrandListResponse> => {
+    const response = await api.get(`/companies/${companyId}/brands`, { params });
+    return response.data;
+  },
+
+  search: async (companyId: string, q: string, limit = 10): Promise<Brand[]> => {
+    const response = await api.get(`/companies/${companyId}/brands/search`, {
+      params: { q, limit },
+    });
+    return response.data;
+  },
+
+  get: async (companyId: string, brandId: string): Promise<Brand> => {
+    const response = await api.get(`/companies/${companyId}/brands/${brandId}`);
+    return response.data;
+  },
+
+  create: async (companyId: string, data: { name: string; description?: string }): Promise<Brand> => {
+    const response = await api.post(`/companies/${companyId}/brands`, data);
+    return response.data;
+  },
+
+  update: async (companyId: string, brandId: string, data: Partial<Brand>): Promise<Brand> => {
+    const response = await api.put(`/companies/${companyId}/brands/${brandId}`, data);
+    return response.data;
+  },
+
+  delete: async (companyId: string, brandId: string): Promise<void> => {
+    await api.delete(`/companies/${companyId}/brands/${brandId}`);
+  },
+};
+
+// Categories API
+export const categoriesApi = {
+  list: async (
+    companyId: string,
+    params?: {
+      page?: number;
+      page_size?: number;
+      search?: string;
+    }
+  ): Promise<CategoryListResponse> => {
+    const response = await api.get(`/companies/${companyId}/categories`, { params });
+    return response.data;
+  },
+
+  search: async (companyId: string, q: string, limit = 10): Promise<Category[]> => {
+    const response = await api.get(`/companies/${companyId}/categories/search`, {
+      params: { q, limit },
+    });
+    return response.data;
+  },
+
+  get: async (companyId: string, categoryId: string): Promise<Category> => {
+    const response = await api.get(`/companies/${companyId}/categories/${categoryId}`);
+    return response.data;
+  },
+
+  create: async (companyId: string, data: { name: string; description?: string }): Promise<Category> => {
+    const response = await api.post(`/companies/${companyId}/categories`, data);
+    return response.data;
+  },
+
+  update: async (companyId: string, categoryId: string, data: Partial<Category>): Promise<Category> => {
+    const response = await api.put(`/companies/${companyId}/categories/${categoryId}`, data);
+    return response.data;
+  },
+
+  delete: async (companyId: string, categoryId: string): Promise<void> => {
+    await api.delete(`/companies/${companyId}/categories/${categoryId}`);
   },
 };
 
@@ -1121,8 +1243,8 @@ export const accountingApi = {
     formData.append("file", file);
     const response = await api.post(`/companies/${companyId}/bank-import`, formData, {
       headers: { "Content-Type": "multipart/form-data" },
-      params: { 
-        bank_account_id: bankAccountId, 
+      params: {
+        bank_account_id: bankAccountId,
         bank_name: bankName,
         ...columnMapping
       },

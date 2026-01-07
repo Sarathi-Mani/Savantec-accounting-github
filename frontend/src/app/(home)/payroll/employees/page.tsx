@@ -35,39 +35,75 @@ export default function EmployeesPage() {
   const [departmentFilter, setDepartmentFilter] = useState<string>("");
   const [showFilters, setShowFilters] = useState(false);
 
-const exportExcel = () => {
-  const ws = XLSX.utils.json_to_sheet(filteredEmployees);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Employees");
-  XLSX.writeFile(wb, "employees.xlsx");
-};
+  const copyToClipboard = async () => {
+    const headers = ["Name", "Code", "Department", "Designation", "Email", "Phone", "CTC", "Status"];
 
-const exportPDF = () => {
-  const doc = new jsPDF();
+    const rows = filteredEmployees.map(emp => [
+      emp.full_name || `${emp.first_name} ${emp.last_name || ""}`,
+      emp.employee_code,
+      getDepartmentName(emp.department_id),
+      getDesignationName(emp.designation_id),
+      emp.email || "",
+      emp.phone || "",
+      emp.ctc ? formatCurrency(emp.ctc) : "-",
+      emp.status
+    ]);
 
-  autoTable(doc, {
-    head: [["Name", "Code", "Department", "Status", "CTC"]],
-    body: filteredEmployees.map(e => [
-      e.full_name ?? "",
-      e.employee_code ?? "",
-      getDepartmentName(e.department_id),
-      e.status ?? "",
-      e.ctc ? formatCurrency(e.ctc) : "-"
-    ])
+    const text =
+      [headers.join("\t"), ...rows.map(r => r.join("\t"))].join("\n");
+
+    await navigator.clipboard.writeText(text);
+    alert("Employee data copied to clipboard");
+  };
+
+
+  const exportExcel = () => {
+    const ws = XLSX.utils.json_to_sheet(filteredEmployees);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Employees");
+    XLSX.writeFile(wb, "employees.xlsx");
+  };
+
+  const exportPDF = () => {
+    const doc = new jsPDF();
+
+    autoTable(doc, {
+      head: [["Name", "Code", "Department", "Status", "CTC"]],
+      body: filteredEmployees.map(e => [
+        e.full_name ?? "",
+        e.employee_code ?? "",
+        getDepartmentName(e.department_id),
+        e.status ?? "",
+        e.ctc ? formatCurrency(e.ctc) : "-"
+      ])
+    });
+
+    doc.save("employees.pdf");
+  };
+
+
+  const exportCSV = () => {
+    const ws = XLSX.utils.json_to_sheet(filteredEmployees);
+    const csv = XLSX.utils.sheet_to_csv(ws);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    saveAs(blob, "employees.csv");
+  };
+
+  const printTable = () => window.print();
+
+  const [visibleColumns, setVisibleColumns] = useState({
+    employee: true,
+    department: true,
+    contact: true,
+    ctc: true,
+    status: true,
+    actions: true,
   });
 
-  doc.save("employees.pdf");
-};
+  const toggleColumn = (key: keyof typeof visibleColumns) => {
+    setVisibleColumns(prev => ({ ...prev, [key]: !prev[key] }));
+  };
 
-
-const exportCSV = () => {
-  const ws = XLSX.utils.json_to_sheet(filteredEmployees);
-  const csv = XLSX.utils.sheet_to_csv(ws);
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  saveAs(blob, "employees.csv");
-};
-
-const printTable = () => window.print();
 
   useEffect(() => {
     const storedCompanyId = localStorage.getItem("company_id");
@@ -237,30 +273,48 @@ const printTable = () => window.print();
         )}
       </div>
 
-      
 
       {/* Employees Table */}
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-                {/* Export Actions */}
-<div className="flex flex-wrap items-center gap-2 mt-4">
-  <button onClick={exportExcel} className="px-3 py-2 text-sm border rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
-    Excel
-  </button>
 
-  <button onClick={exportCSV} className="px-3 py-2 text-sm border rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
-    CSV
-  </button>
+        {/* Table Header Actions */}
+        <div className="flex items-center justify-end gap-2 px-4 py-3 border-b border-gray-200 dark:border-gray-700">
 
-  <button onClick={exportPDF} className="px-3 py-2 text-sm border rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
-    PDF
-  </button>
+          <button
+            onClick={copyToClipboard}
+            className="px-3 py-2 text-sm border bg-primary text-white rounded-lg"
+          >
+            Copy
+          </button>
 
-  <button onClick={printTable} className="px-3 py-2 text-sm border rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
-    Print
-  </button>
-</div>
+          <div className="relative group">
+            <button className="px-3 py-2 text-sm border bg-primary text-white rounded-lg">
+              Columns
+            </button>
+
+            <div className="absolute right-0 mt-2 hidden group-hover:block bg-white dark:bg-gray-800 border rounded-lg shadow-md p-3 z-10">
+              {Object.keys(visibleColumns).map(key => (
+                <label key={key} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={visibleColumns[key as keyof typeof visibleColumns]}
+                    onChange={() => toggleColumn(key as keyof typeof visibleColumns)}
+                  />
+                  {key.charAt(0).toUpperCase() + key.slice(1)}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <button onClick={exportExcel} className="px-3 py-2 text-sm bg-primary text-white rounded-lg">Excel</button>
+          <button onClick={exportCSV} className="px-3 py-2 text-sm bg-primary text-white rounded-lg">CSV</button>
+          <button onClick={exportPDF} className="px-3 py-2 text-sm bg-primary text-white rounded-lg">PDF</button>
+          <button onClick={printTable} className="px-3 py-2 text-sm bg-primary text-white rounded-lg">Print</button>
+        </div>
+
+
         <div className="overflow-x-auto">
-          
+
           <table className="w-full">
             <thead className="bg-gray-50 dark:bg-gray-900/50">
               <tr>

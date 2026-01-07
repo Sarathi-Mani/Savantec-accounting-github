@@ -1,15 +1,31 @@
 "use client";
 
 import { useAuth } from "@/context/AuthContext";
-import { productsApi, getErrorMessage } from "@/services/api";
+import { productsApi, brandsApi, categoriesApi, getErrorMessage } from "@/services/api";
+import { Link } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+
+interface Brand {
+  id: string;
+  name: string;
+}
+
+interface Category {
+  id: string;
+  name: string;
+}
 
 export default function NewProductPage() {
   const { company } = useAuth();
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  const [brands, setBrands] = useState<Brand[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loadingBrands, setLoadingBrands] = useState(false);
+  const [loadingCategories, setLoadingCategories] = useState(false);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -21,7 +37,32 @@ export default function NewProductPage() {
     gst_rate: "18",
     is_inclusive: false,
     is_service: false,
+    brand_id: "",
+    category_id: "",
   });
+
+  useEffect(() => {
+    const fetchBrandsAndCategories = async () => {
+      if (!company?.id) return;
+
+      try {
+        setLoadingBrands(true);
+        const brandsResult = await brandsApi.list(company.id, { page: 1, page_size: 100 });
+        setBrands(brandsResult.brands);
+
+        setLoadingCategories(true);
+        const categoriesResult = await categoriesApi.list(company.id, { page: 1, page_size: 100 });
+        setCategories(categoriesResult.categories);
+      } catch (error) {
+        console.error("Failed to fetch brands/categories:", error);
+      } finally {
+        setLoadingBrands(false);
+        setLoadingCategories(false);
+      }
+    };
+
+    fetchBrandsAndCategories();
+  }, [company?.id]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target;
@@ -56,6 +97,8 @@ export default function NewProductPage() {
         hsn_code: formData.hsn_code || undefined,
         sku: formData.sku || undefined,
         description: formData.description || undefined,
+        brand_id: formData.brand_id || undefined,
+        category_id: formData.category_id || undefined,
       });
       router.push("/products");
     } catch (error: any) {
@@ -145,6 +188,68 @@ export default function NewProductPage() {
                     maxLength={8}
                     className="w-full rounded-lg border border-stroke bg-transparent px-4 py-3 outline-none focus:border-primary dark:border-dark-3"
                   />
+                </div>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-dark dark:text-white">
+                    Brand
+                  </label>
+                  <select
+                    name="brand_id"
+                    value={formData.brand_id}
+                    onChange={handleChange}
+                    className="w-full rounded-lg border border-stroke bg-transparent px-4 py-3 outline-none focus:border-primary dark:border-dark-3"
+                    disabled={loadingBrands}
+                  >
+                    <option value="">Select Brand</option>
+                    {brands.map((brand) => (
+                      <option key={brand.id} value={brand.id}>
+                        {brand.name}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="mt-2">
+                    <Link
+                      href="/products/brands/new"
+                      className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                    >
+                      <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                      </svg>
+                      Add New Brand
+                    </Link>
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-dark dark:text-white">
+                    Category
+                  </label>
+                  <select
+                    name="category_id"
+                    value={formData.category_id}
+                    onChange={handleChange}
+                    className="w-full rounded-lg border border-stroke bg-transparent px-4 py-3 outline-none focus:border-primary dark:border-dark-3"
+                    disabled={loadingCategories}
+                  >
+                    <option value="">Select Category</option>
+                    {categories.map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.name}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="mt-2">
+                    <Link
+                      href="/products/categories/new"
+                      className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                    >
+                      <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                      </svg>
+                      Add New Category
+                    </Link>
+                  </div>
                 </div>
               </div>
               <div className="flex items-center gap-4">

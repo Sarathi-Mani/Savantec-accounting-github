@@ -40,6 +40,37 @@ export const NAV_DATA = [
     ]
   },
   {
+    label : "PRODUCTS",
+    items : [
+      {
+        title: "brand",
+        icon: Icons.Tags,
+        items: [
+          { title: "All Brands", url: "/products/brands"},
+          { title: "Add Brand", url: "/products/brands/new"}
+        ]
+      },
+      {
+        title: "Categories",
+        icon: Icons.Folder,
+        items: [
+          { title: "All Categories", url: "/products/categories"},
+          { title: "Add Category", url: "/products/categories/new"}
+        ]
+      },
+      {
+        title: "Products",
+        icon: Icons.FourCircle,
+        items: [
+          { title: "All Products", url: "/products" },
+          { title: "Stock Groups", url: "/inventory/groups" },
+          { title: "Price Levels", url: "/inventory/price-levels" },
+          { title: "Discounts", url: "/inventory/discounts" },
+        ],
+      },
+    ]
+  },
+  {
     label: "SALES PIPELINE",
     items: [
       {
@@ -165,16 +196,6 @@ export const NAV_DATA = [
         url: "/inventory",
         icon: Icons.Box,
         items: [],
-      },
-      {
-        title: "Products",
-        icon: Icons.FourCircle,
-        items: [
-          { title: "All Products", url: "/products" },
-          { title: "Stock Groups", url: "/inventory/groups" },
-          { title: "Price Levels", url: "/inventory/price-levels" },
-          { title: "Discounts", url: "/inventory/discounts" },
-        ],
       },
       {
         title: "Alternative Products",
