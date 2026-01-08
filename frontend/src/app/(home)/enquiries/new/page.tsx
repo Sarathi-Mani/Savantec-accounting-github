@@ -8,12 +8,19 @@ import { customersApi, productsApi, getErrorMessage } from "@/services/api";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:6768";
 
+
 interface Customer {
   id: string;
   name: string;
   email?: string;
   phone?: string;
-  contact_person?: string;
+  contact_persons?: Array<{
+    id: string;
+    name: string;
+    email?: string;
+    phone?: string;
+    is_primary?: boolean;
+  }>;
 }
 
 interface Product {
@@ -45,8 +52,13 @@ export default function NewEnquiryPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [contactPersonSearch, setContactPersonSearch] = useState("");
+const [filteredContactPersons, setFilteredContactPersons] = useState<any[]>([]);
   const [filteredCustomers, setFilteredCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [selectedCustomerContacts, setSelectedCustomerContacts] = useState<any[]>([]);
+  const [showContactDropdown, setShowContactDropdown] = useState(false);
+  const contactDropdownRef = useRef<HTMLDivElement>(null);
   const [filteredProducts, setFilteredProducts] = useState<Product[][]>([]); // Changed to array of arrays
   const [employees, setEmployees] = useState<Employee[]>([
     { id: "1", first_name: "Sales", last_name: "Person 1" },
@@ -87,6 +99,21 @@ export default function NewEnquiryPage() {
     status: "pending",
   });
 
+ // Clear contact persons when customer search is cleared
+useEffect(() => {
+  if (!formData.customer_id && formData.customer_search === "") {
+    setSelectedCustomerContacts([]);
+    setFilteredContactPersons([]); // Clear filtered list too
+    setContactPersonSearch(""); // Clear search term
+    setFormData(prev => ({
+      ...prev,
+      kind_attn: "",
+      mail_id: "",
+      phone_no: "",
+    }));
+  }
+}, [formData.customer_id, formData.customer_search]);
+
   // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -96,6 +123,9 @@ export default function NewEnquiryPage() {
       if (salesmanSearchRef.current && !salesmanSearchRef.current.contains(event.target as Node)) {
         setShowSalesmanDropdown(false);
       }
+        if (contactDropdownRef.current && !contactDropdownRef.current.contains(event.target as Node)) {
+      setShowContactDropdown(false);
+    }
       productSearchRefs.current.forEach((ref, index) => {
         if (ref && !ref.contains(event.target as Node) && showProductDropdowns[index]) {
           const newShowDropdowns = [...showProductDropdowns];
@@ -104,14 +134,14 @@ export default function NewEnquiryPage() {
         }
       });
     };
-
+ 
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [showProductDropdowns]);
 
   useEffect(() => {
     // Generate suggested enquiry number
-    const suggestedNumber = `ENQ-${new Date().getFullYear()}-${Math.floor(Math.random() * 10000)
+    const suggestedNumber = `ENQ-${Math.floor(Math.random() * 10000)
       .toString()
       .padStart(4, "0")}`;
     setFormData((prev) => ({ ...prev, enquiry_no: suggestedNumber }));
@@ -136,7 +166,6 @@ const fetchCustomers = async () => {
     
     const token = localStorage.getItem("access_token");
     const url = `${API_BASE}/companies/${company.id}/customers?page=1&page_size=100`;
-    console.log("Full URL:", url);
     
     const response = await fetch(url, {
       headers: {
@@ -145,81 +174,51 @@ const fetchCustomers = async () => {
       }
     });
     
-    console.log("Response status:", response.status);
-    
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("Server error:", errorText);
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
     
     const data = await response.json();
     
-    // Detailed logging of response structure
-    console.log("=== CUSTOMERS API RESPONSE STRUCTURE ===");
-    console.log("Full response:", JSON.stringify(data, null, 2));
-    console.log("Type of data:", typeof data);
-    console.log("Keys in data:", Object.keys(data));
+    let customersList: any[] = [];
     
-    // Check if it's an array
     if (Array.isArray(data)) {
-      console.log("✅ Response is an array with", data.length, "items");
-      setCustomers(data);
-      setFilteredCustomers(data);
-      return;
+      customersList = data;
+    } else if (data.customers && Array.isArray(data.customers)) {
+      customersList = data.customers;
+    } else {
+      console.warn("❌ No array found in response");
     }
     
-    // Check common response structures
-    const possibleArrayKeys = ['customers', 'items', 'data', 'results', 'list'];
+    // Process customers
+    const processedCustomers: Customer[] = customersList.map((customer: any) => {
+      return {
+        id: customer.id,
+        name: customer.name,
+        email: customer.email,
+        phone: customer.mobile || customer.phone || '',
+        contact_persons: customer.contact_persons || []
+      };
+    });
     
-    for (const key of possibleArrayKeys) {
-      if (data[key] && Array.isArray(data[key])) {
-        console.log(`✅ Found array in key '${key}' with ${data[key].length} items`);
-        console.log("First few items:", data[key].slice(0, 3));
-        setCustomers(data[key]);
-        setFilteredCustomers(data[key]);
-        return;
-      }
-    }
-    
-    // If no array found, check all keys
-    console.log("🔍 Searching for any array in response...");
-    for (const key in data) {
-      if (Array.isArray(data[key])) {
-        console.log(`✅ Found array in key '${key}' with ${data[key].length} items`);
-        setCustomers(data[key]);
-        setFilteredCustomers(data[key]);
-        return;
-      }
-    }
-    
-    console.warn("❌ No array found in response. Full data:", data);
-    setCustomers([]);
-    setFilteredCustomers([]);
+    console.log("Processed customers:", processedCustomers.length);
+    setCustomers(processedCustomers);
+    setFilteredCustomers(processedCustomers);
     
   } catch (err: any) {
     console.error("❌ Failed to fetch customers:", err);
     setError(`Failed to load customers: ${err.message}`);
-    
-    // Use fallback data for testing
-    const fallbackCustomers = [
-      { id: "1", name: "Test Customer 1", email: "test1@example.com", phone: "1234567890", contact_person: "John Doe" },
-      { id: "2", name: "Test Customer 2", email: "test2@example.com", phone: "0987654321", contact_person: "Jane Smith" },
-      { id: "3", name: "Demo Company", email: "demo@example.com", phone: "5555555555", contact_person: "Alex Johnson" }
-    ];
-    
-    console.log("Using fallback customers for testing");
-    setCustomers(fallbackCustomers);
-    setFilteredCustomers(fallbackCustomers);
+    setCustomers([]);
+    setFilteredCustomers([]);
   }
 };
-  const fetchProducts = async () => {
+ const fetchProducts = async () => {
   if (!company?.id) return;
   
   try {
     console.log("Fetching products for company:", company.id);
     
-    // Use direct fetch to debug
     const token = localStorage.getItem("access_token");
     const url = `${API_BASE}/companies/${company.id}/products?page_size=100`;
     console.log("Products URL:", url);
@@ -234,14 +233,13 @@ const fetchCustomers = async () => {
     console.log("Products response status:", response.status);
     
     if (!response.ok) {
-      console.warn("Products API failed, using fallback data");
+      console.warn("Products API failed");
       throw new Error(`HTTP ${response.status}: Products endpoint might not exist`);
     }
     
     const data = await response.json();
     console.log("Products response:", data);
     
-    // Handle products response
     let productsList = [];
     
     if (Array.isArray(data)) {
@@ -261,36 +259,50 @@ const fetchCustomers = async () => {
   } catch (err: any) {
     console.error("Failed to fetch products:", err);
     
-    // Use fallback products
-    const fallbackProducts = [
-      {
-        id: "1",
-        name: "Product A",
-        description: "Sample product A description",
-        sku: "PROD-A-001",
-        image: "https://via.placeholder.com/150"
-      },
-      {
-        id: "2", 
-        name: "Product B",
-        description: "Sample product B description",
-        sku: "PROD-B-002",
-        image: "https://via.placeholder.com/150"
-      },
-      {
-        id: "3",
-        name: "Product C",
-        description: "Sample product C description",
-        sku: "PROD-C-003",
-        image: "https://via.placeholder.com/150"
-      }
-    ];
-    
-    console.log("Using fallback products");
-    setProducts(fallbackProducts);
-    setFilteredProducts([fallbackProducts]);
+    // REMOVED FALLBACK VALUES as requested
+    setProducts([]);
+    setFilteredProducts([[]]);
   }
 };
+
+
+
+const filterContactPersons = useCallback((searchTerm: string) => {
+  if (!selectedCustomerContacts.length) {
+    setFilteredContactPersons([]);
+    return;
+  }
+  
+  if (!searchTerm.trim()) {
+    // If search is empty, show all contact persons
+    setFilteredContactPersons(selectedCustomerContacts);
+    return;
+  }
+  
+  const searchLower = searchTerm.toLowerCase().trim();
+  
+  const filtered = selectedCustomerContacts.filter(contact => {
+    // Check name
+    if (contact.name.toLowerCase().includes(searchLower)) {
+      return true;
+    }
+    
+    // Check email
+    if (contact.email && contact.email.toLowerCase().includes(searchLower)) {
+      return true;
+    }
+    
+    // Check phone
+    if (contact.phone && contact.phone.toLowerCase().includes(searchLower)) {
+      return true;
+    }
+    
+    return false;
+  });
+  
+  setFilteredContactPersons(filtered);
+}, [selectedCustomerContacts]);
+
 
 const filterCustomers = useCallback((searchTerm: string) => {
   if (!customers.length) {
@@ -301,12 +313,13 @@ const filterCustomers = useCallback((searchTerm: string) => {
   const filtered = customers.filter(customer =>
     customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     customer.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    customer.contact_person?.toLowerCase().includes(searchTerm.toLowerCase())
+    customer.phone?.toLowerCase().includes(searchTerm.toLowerCase())
   );
   
   console.log(`Filtered ${customers.length} customers to ${filtered.length}`);
   setFilteredCustomers(filtered);
 }, [customers]);
+
   const filterProducts = useCallback((searchTerm: string, index: number) => {
     const filtered = products.filter(product =>
       product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -326,18 +339,42 @@ const filterCustomers = useCallback((searchTerm: string) => {
     setFilteredEmployees(filtered);
   }, [employees]);
 
-  const selectCustomer = useCallback((customer: Customer) => {
+ const selectContactPerson = useCallback((contact: any) => {
+  console.log("Selected contact person:", contact);
+  
+  setFormData(prev => ({
+    ...prev,
+    kind_attn: contact.name,
+  }));
+  
+  setShowContactDropdown(false);
+  setContactPersonSearch(""); // Reset search term when contact is selected
+  setFilteredContactPersons(selectedCustomerContacts); // Reset to show all contacts
+}, [selectedCustomerContacts]);
+
+const selectCustomer = useCallback((customer: Customer) => {
   console.log("Selected customer:", customer);
-  setFormData({
-    ...formData,
+  
+  // Store the contact persons for this customer
+  const contactPersons = customer.contact_persons || [];
+  setSelectedCustomerContacts(contactPersons);
+  setFilteredContactPersons(contactPersons); // Initialize filtered list
+  setContactPersonSearch(""); // Reset search term
+  
+  // Update form data with customer info
+  setFormData(prev => ({
+    ...prev,
     customer_id: customer.id,
     customer_search: customer.name,
-    kind_attn: customer.contact_person || "",
+    kind_attn: "", // Reset kind attention
     mail_id: customer.email || "",
     phone_no: customer.phone || "",
-  });
+  }));
+  
   setShowCustomerDropdown(false);
-}, [formData]);
+}, []);
+
+
 
   const selectProduct = useCallback((product: Product, index: number) => {
     const updated = [...enquiryItems];
@@ -472,12 +509,12 @@ const filterCustomers = useCallback((searchTerm: string) => {
       // Append basic form data (match the form field names in the API)
       formDataToSend.append("enquiry_no", formData.enquiry_no);
       formDataToSend.append("enquiry_date", formData.enquiry_date);
-      formDataToSend.append("company_id_form", formData.customer_id);
+      formDataToSend.append("customer_id", formData.customer_id);
       formDataToSend.append("kind_attn", formData.kind_attn || "");
       formDataToSend.append("mail_id", formData.mail_id || "");
       formDataToSend.append("phone_no", formData.phone_no || "");
       formDataToSend.append("remarks", formData.remarks || "");
-      formDataToSend.append("salesman_id", formData.salesman_id || "");
+      // formDataToSend.append("salesman_id", formData.salesman_id || "");
       formDataToSend.append("status", formData.status);
 
       // Prepare items data
@@ -606,186 +643,281 @@ const filterCustomers = useCallback((searchTerm: string) => {
           </div>
         </div>
 
-        {/* Customer Information Section */}
-        <div className="bg-white dark:bg-gray-dark rounded-lg shadow p-6">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Customer Information</h2>
-          
-          <div className="space-y-4">
-            <div ref={customerSearchRef} className="relative">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Customer Name <span className="text-red-500">*</span>
-              </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  name="customer_search"
-                  value={formData.customer_search}
-                  onChange={(e) => {
-                    setFormData({ ...formData, customer_search: e.target.value });
-                    filterCustomers(e.target.value);
-                    setShowCustomerDropdown(true);
-                  }}
-                  onFocus={() => setShowCustomerDropdown(true)}
-                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-dark-2 dark:border-dark-3 dark:text-white"
-                  placeholder="Search customer..."
-                  required
-                />
-                <input
-                  type="hidden"
-                  name="customer_id"
-                  value={formData.customer_id}
-                />
-                {formData.customer_search && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFormData({ ...formData, customer_search: "", customer_id: "" });
-                      setFilteredCustomers(customers);
-                    }}
-                    className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                  >
-                    ✕
-                  </button>
-                )}
-              </div>
+       {/* Customer Information Section */}
+<div className="bg-white dark:bg-gray-dark rounded-lg shadow p-6">
+  <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Customer Information</h2>
+  
+  <div className="space-y-4">
+    <div ref={customerSearchRef} className="relative">
+      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+        Customer Name <span className="text-red-500">*</span>
+      </label>
+      <div className="relative">
+        <input
+          type="text"
+          name="customer_search"
+          value={formData.customer_search}
+          onChange={(e) => {
+            setFormData({ ...formData, customer_search: e.target.value });
+            filterCustomers(e.target.value);
+            setShowCustomerDropdown(true);
+          }}
+          onFocus={() => setShowCustomerDropdown(true)}
+          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-dark-2 dark:border-dark-3 dark:text-white"
+          placeholder="Search customer..."
+          required
+        />
+        <input
+          type="hidden"
+          name="customer_id"
+          value={formData.customer_id}
+        />
+        {formData.customer_search && (
+          <button
+            type="button"
+            onClick={() => {
+              setFormData({ ...formData, customer_search: "", customer_id: "" });
+              setFilteredCustomers(customers);
+            }}
+            className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+          >
+            ✕
+          </button>
+        )}
+      </div>
+      
+      {showCustomerDropdown && filteredCustomers.length > 0 && (
+        <div className="absolute z-10 w-full mt-1 bg-white dark:bg-dark-2 border border-gray-300 dark:border-dark-3 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+          {filteredCustomers.map((customer) => (
+            <div
+              key={customer.id}
+              className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-dark-3 cursor-pointer border-b dark:border-dark-3 last:border-b-0"
+              onClick={() => selectCustomer(customer)}
+            >
+              <div className="font-medium text-gray-900 dark:text-white">{customer.name}</div>
               
-              {showCustomerDropdown && filteredCustomers.length > 0 && (
-                <div className="absolute z-10 w-full mt-1 bg-white dark:bg-dark-2 border border-gray-300 dark:border-dark-3 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                  {filteredCustomers.map((customer) => (
-                    <div
-                      key={customer.id}
-                      className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-dark-3 cursor-pointer border-b dark:border-dark-3 last:border-b-0"
-                      onClick={() => selectCustomer(customer)}
-                    >
-                      <div className="font-medium text-gray-900 dark:text-white">{customer.name}</div>
-                      {customer.contact_person && (
-                        <div className="text-sm text-gray-600 dark:text-gray-400">Contact: {customer.contact_person}</div>
-                      )}
-                      {customer.email && (
-                        <div className="text-sm text-gray-600 dark:text-gray-400">Email: {customer.email}</div>
-                      )}
-                    </div>
-                  ))}
+              {/* Show customer info only, not contact person */}
+              {customer.email && (
+                <div className="text-sm text-gray-600 dark:text-gray-400">Email: {customer.email}</div>
+              )}
+              
+              {customer.phone && (
+                <div className="text-sm text-gray-600 dark:text-gray-400">Phone: {customer.phone}</div>
+              )}
+              
+              {/* Show number of contact persons */}
+              {customer.contact_persons && customer.contact_persons.length > 0 && (
+                <div className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                  {customer.contact_persons.length} contact person(s) available
                 </div>
               )}
             </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Kind Attn.
-                </label>
-                <input
-                  type="text"
-                  name="kind_attn"
-                  value={formData.kind_attn}
-                  onChange={handleChange}
-                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-dark-2 dark:border-dark-3 dark:text-white"
-                  placeholder="Person Name"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Mail-ID
-                </label>
-                <input
-                  type="email"
-                  name="mail_id"
-                  value={formData.mail_id}
-                  onChange={handleChange}
-                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-dark-2 dark:border-dark-3 dark:text-white"
-                  placeholder="Email"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Phone No
-                </label>
-                <input
-                  type="tel"
-                  name="phone_no"
-                  value={formData.phone_no}
-                  onChange={handleChange}
-                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-dark-2 dark:border-dark-3 dark:text-white"
-                  placeholder="Phone Number"
-                />
-              </div>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Remarks
-              </label>
-              <textarea
-                name="remarks"
-                value={formData.remarks}
-                onChange={handleChange}
-                rows={2}
-                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-dark-2 dark:border-dark-3 dark:text-white"
-                placeholder="Additional remarks..."
-              />
-            </div>
-
-            <div ref={salesmanSearchRef} className="relative">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Sales Person
-              </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  name="salesman_search"
-                  value={formData.salesman_search}
-                  onChange={(e) => {
-                    setFormData({ ...formData, salesman_search: e.target.value });
-                    filterEmployees(e.target.value);
-                    setShowSalesmanDropdown(true);
-                  }}
-                  onFocus={() => setShowSalesmanDropdown(true)}
-                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-dark-2 dark:border-dark-3 dark:text-white"
-                  placeholder="Search sales person..."
-                />
-                <input
-                  type="hidden"
-                  name="salesman_id"
-                  value={formData.salesman_id}
-                />
-                {formData.salesman_search && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFormData({ ...formData, salesman_search: "", salesman_id: "" });
-                      setFilteredEmployees(employees);
-                    }}
-                    className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                  >
-                    ✕
-                  </button>
-                )}
-              </div>
-              
-              {showSalesmanDropdown && filteredEmployees.length > 0 && (
-                <div className="absolute z-10 w-full mt-1 bg-white dark:bg-dark-2 border border-gray-300 dark:border-dark-3 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                  {filteredEmployees.map((employee) => (
-                    <div
-                      key={employee.id}
-                      className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-dark-3 cursor-pointer border-b dark:border-dark-3 last:border-b-0"
-                      onClick={() => selectSalesman(employee)}
-                    >
-                      <div className="font-medium text-gray-900 dark:text-white">
-                        {employee.first_name} {employee.last_name}
-                      </div>
-                      {employee.email && (
-                        <div className="text-sm text-gray-600 dark:text-gray-400">Email: {employee.email}</div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+          ))}
         </div>
+      )}
+    </div>
+    
+    {/* This grid was missing a closing div */}
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div ref={contactDropdownRef} className="relative">
+  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+    Kind Attn.
+  </label>
+  <div className="relative">
+    <input
+      type="text"
+      name="kind_attn"
+      value={formData.kind_attn}
+      onChange={(e) => {
+        setFormData({ ...formData, kind_attn: e.target.value });
+        setContactPersonSearch(e.target.value); // Also update search term
+        filterContactPersons(e.target.value); // Filter contacts
+        setShowContactDropdown(true);
+      }}
+      onFocus={() => {
+        if (selectedCustomerContacts.length > 0) {
+          setShowContactDropdown(true);
+        }
+      }}
+      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-dark-2 dark:border-dark-3 dark:text-white"
+      placeholder={selectedCustomerContacts.length > 0 ? "Select or search contact person..." : "No contact persons available"}
+      disabled={selectedCustomerContacts.length === 0}
+    />
+    
+    {selectedCustomerContacts.length > 0 && formData.kind_attn && (
+      <button
+        type="button"
+        onClick={() => {
+          setFormData({ ...formData, kind_attn: "" });
+          setContactPersonSearch(""); // Clear search term
+          setFilteredContactPersons(selectedCustomerContacts); // Reset filtered list
+        }}
+        className="absolute right-8 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+      >
+        ✕
+      </button>
+    )}
+    
+    {selectedCustomerContacts.length > 0 && (
+      <button
+        type="button"
+        onClick={() => setShowContactDropdown(!showContactDropdown)}
+        className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+      >
+        ▼
+      </button>
+    )}
+  </div>
+  
+  {showContactDropdown && selectedCustomerContacts.length > 0 && (
+    <div className="absolute z-10 w-full mt-1 bg-white dark:bg-dark-2 border border-gray-300 dark:border-dark-3 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+      {/* Search input for contact persons */}
+      <div className="p-2 border-b dark:border-dark-3">
+        <input
+          type="text"
+          value={contactPersonSearch}
+          onChange={(e) => {
+            setContactPersonSearch(e.target.value);
+            filterContactPersons(e.target.value);
+          }}
+          placeholder="Search contact persons..."
+          className="w-full px-3 py-1 text-sm border rounded focus:ring-1 focus:ring-indigo-500 dark:bg-dark-3 dark:border-dark-3 dark:text-white"
+          autoFocus
+        />
+      </div>
+      
+      {/* Results count */}
+      <div className="px-3 py-2 text-xs text-gray-500 dark:text-gray-400 border-b dark:border-dark-3">
+        {filteredContactPersons.length === 0 
+          ? "No contact persons found" 
+          : `${filteredContactPersons.length} contact person(s)`}
+      </div>
+      
+      {/* Contact persons list */}
+      {filteredContactPersons.length > 0 && filteredContactPersons.map((contact, index) => (
+        <div
+          key={contact.id || index}
+          className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-dark-3 cursor-pointer border-b dark:border-dark-3 last:border-b-0"
+          onClick={() => selectContactPerson(contact)}
+        >
+          <div className="font-medium text-gray-900 dark:text-white">{contact.name}</div>
+          {contact.email && (
+            <div className="text-sm text-gray-600 dark:text-gray-400">Email: {contact.email}</div>
+          )}
+          {contact.phone && (
+            <div className="text-sm text-gray-600 dark:text-gray-400">Phone: {contact.phone}</div>
+          )}
+          {contact.is_primary && (
+            <div className="text-xs text-green-600 dark:text-green-400">Primary Contact</div>
+          )}
+        </div>
+      ))}
+    </div>
+  )}
+</div>
+      
+      <div>
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          Mail-ID
+        </label>
+        <input
+          type="email"
+          name="mail_id"
+          value={formData.mail_id}
+          onChange={handleChange}
+          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-dark-2 dark:border-dark-3 dark:text-white"
+          placeholder="Email"
+        />
+      </div>
+      
+      <div>
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          Phone No
+        </label>
+        <input
+          type="tel"
+          name="phone_no"
+          value={formData.phone_no}
+          onChange={handleChange}
+          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-dark-2 dark:border-dark-3 dark:text-white"
+          placeholder="Phone Number"
+        />
+      </div>
+    </div>
+    {/* End of grid-cols-3 grid */}
+    
+    <div>
+      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+        Remarks
+      </label>
+      <textarea
+        name="remarks"
+        value={formData.remarks}
+        onChange={handleChange}
+        rows={2}
+        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-dark-2 dark:border-dark-3 dark:text-white"
+        placeholder="Additional remarks..."
+      />
+    </div>
+
+    <div ref={salesmanSearchRef} className="relative">
+      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+        Sales Person
+      </label>
+      <div className="relative">
+        <input
+          type="text"
+          name="salesman_search"
+          value={formData.salesman_search}
+          onChange={(e) => {
+            setFormData({ ...formData, salesman_search: e.target.value });
+            filterEmployees(e.target.value);
+            setShowSalesmanDropdown(true);
+          }}
+          onFocus={() => setShowSalesmanDropdown(true)}
+          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 dark:bg-dark-2 dark:border-dark-3 dark:text-white"
+          placeholder="Search sales person..."
+        />
+        <input
+          type="hidden"
+          name="salesman_id"
+          value={formData.salesman_id}
+        />
+        {formData.salesman_search && (
+          <button
+            type="button"
+            onClick={() => {
+              setFormData({ ...formData, salesman_search: "", salesman_id: "" });
+              setFilteredEmployees(employees);
+            }}
+            className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+          >
+            ✕
+          </button>
+        )}
+      </div>
+      
+      {showSalesmanDropdown && filteredEmployees.length > 0 && (
+        <div className="absolute z-10 w-full mt-1 bg-white dark:bg-dark-2 border border-gray-300 dark:border-dark-3 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+          {filteredEmployees.map((employee) => (
+            <div
+              key={employee.id}
+              className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-dark-3 cursor-pointer border-b dark:border-dark-3 last:border-b-0"
+              onClick={() => selectSalesman(employee)}
+            >
+              <div className="font-medium text-gray-900 dark:text-white">
+                {employee.first_name} {employee.last_name}
+              </div>
+              {employee.email && (
+                <div className="text-sm text-gray-600 dark:text-gray-400">Email: {employee.email}</div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  </div>
+</div>
 
         {/* Items Section */}
         <div className="bg-white dark:bg-gray-dark rounded-lg shadow p-6">

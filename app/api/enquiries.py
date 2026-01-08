@@ -20,6 +20,8 @@ from app.database.payroll_models import Employee
 router = APIRouter(prefix="/api/companies/{company_id}", tags=["enquiries"])
 
 
+
+
 class EnquiryCreate(BaseModel):
     subject: str
     customer_id: Optional[str] = None
@@ -39,6 +41,19 @@ class EnquiryCreate(BaseModel):
     expected_close_date: Optional[datetime] = None
     priority: str = "medium"
     notes: Optional[str] = None
+
+
+# Add this new model after your existing models
+class EnquiryEditUpdate(BaseModel):
+    status: Optional[str] = None
+    pending_remarks: Optional[str] = None
+    quotation_no: Optional[str] = None
+    quotation_date: Optional[date] = None
+    items: Optional[List[Dict[str, Any]]] = None
+    
+    class Config:
+        from_attributes = True
+
 
 
 class EnquiryUpdate(BaseModel):
@@ -224,7 +239,7 @@ class SimpleEnquiryService:
             expected_close_date=kwargs.get('expected_close_date'),
             priority=kwargs.get('priority', 'medium'),
             notes=kwargs.get('notes'),
-            status=EnquiryStatus.NEW,
+            status=kwargs.get('status', EnquiryStatus.PENDING),
             created_at=today,
             updated_at=today
         )
@@ -357,12 +372,12 @@ async def create_enquiry_formdata(
     company_id: str,
     enquiry_no: str = Form(...),
     enquiry_date: date = Form(...),
-    company_id_form: str = Form(...),  # This is actually customer_id
+    customer_id: str = Form(...),  # This is actually customer_id
     kind_attn: Optional[str] = Form(None),
     mail_id: Optional[str] = Form(None),
     phone_no: Optional[str] = Form(None),
     remarks: Optional[str] = Form(None),
-    salesman_id: Optional[str] = Form(None),
+    salesman_id: Optional[str] = Form(None), 
     status: str = Form("pending"),
     items: str = Form("[]"),  # JSON string of items
     files: List[UploadFile] = File([]),
@@ -380,8 +395,8 @@ async def create_enquiry_formdata(
     # Create enquiry data from form
     enquiry_data = {
         "subject": remarks or f"Enquiry {enquiry_no}",
-        "customer_id": company_id_form if company_id_form != company_id else None,
-        "sales_person_id": salesman_id,
+        "customer_id": customer_id if customer_id != company_id else None,
+        "sales_person_id": salesman_id,  # Use the salesman_id from form data, not hardcoded "1"
         "prospect_name": kind_attn,
         "prospect_email": mail_id,
         "prospect_phone": phone_no,
@@ -400,7 +415,7 @@ async def create_enquiry_formdata(
         **enquiry_data
     )
     
-    # Override with provided enquiry number
+   
     enquiry.enquiry_number = enquiry_no
     
     # Create upload directory
@@ -578,7 +593,98 @@ def get_enquiry(
     
     return enrich_enquiry(enquiry, db)
 
+@router.put("/enquiries/{enquiry_id}/edit", response_model=EnquiryResponse)
+def update_enquiry_edit(
+    company_id: str,
+    enquiry_id: str,
+    data: EnquiryEditUpdate,
+    db: Session = Depends(get_db),
+):
+    """Update enquiry with edit page data."""
+    print(f"DEBUG: Received update request for enquiry {enquiry_id}")
+    print(f"DEBUG: Request data: {data.model_dump()}")
+    
+    get_company(db, company_id)
+    
+    service = SimpleEnquiryService(db)
+    enquiry = service.get_enquiry(enquiry_id)
+    
+    if not enquiry or enquiry.company_id != company_id:
+        raise HTTPException(status_code=404, detail="Enquiry not found")
+    
+    # Update basic fields
+    update_data = {}
+    
+    if data.status is not None:
+        try:
+            update_data['status'] = EnquiryStatus(data.status)
+            print(f"DEBUG: Setting status to {data.status}")
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid status: {data.status}")
+    
+    if data.pending_remarks is not None:
+        enquiry.pending_remarks = data.pending_remarks
+        print(f"DEBUG: Setting pending_remarks to {data.pending_remarks}")
+    
+    if data.quotation_no is not None:
+        enquiry.quotation_no = data.quotation_no
+        print(f"DEBUG: Setting quotation_no to {data.quotation_no}")
+    
+    if data.quotation_date is not None:
+        enquiry.quotation_date = data.quotation_date
+        print(f"DEBUG: Setting quotation_date to {data.quotation_date}")
+    
+    # Update enquiry items if provided
+    if data.items is not None:
+        print(f"DEBUG: Processing {len(data.items)} items")
+        
+        # First, delete existing items
+        db.query(EnquiryItem).filter(EnquiryItem.enquiry_id == enquiry_id).delete()
+        
+        # Then create new items WITHOUT the fields that don't exist in EnquiryItem
+        for index, item_data in enumerate(data.items):
+            print(f"DEBUG: Creating item {index}: {item_data}")
+            item = EnquiryItem(
+                id=os.urandom(16).hex(),
+                enquiry_id=enquiry_id,
+                product_id=item_data.get('product_id'),
+                description=item_data.get('description', ''),
+                quantity=item_data.get('quantity', 1),
+                image_url=item_data.get('existing_image'),
+                notes=item_data.get('notes', f'Item {index + 1}'),
+                # DON'T include suitable_item, purchase_price, sales_price here
+                # These fields don't exist in EnquiryItem model
+                created_at=datetime.utcnow()
+            )
+            db.add(item)
+        
+        # Update products_interested in enquiry with ALL data including prices
+        products_interested = []
+        for item_data in data.items:
+            products_interested.append({
+                "product_id": item_data.get('product_id'),
+                "description": item_data.get('description', ''),
+                "quantity": item_data.get('quantity', 1),
+                "notes": item_data.get('notes', ''),
+                "suitable_item": item_data.get('suitable_item', ''),
+                "purchase_price": item_data.get('purchase_price', 0),
+                "sales_price": item_data.get('sales_price', 0),
+                "image_url": item_data.get('existing_image')
+            })
+        enquiry.products_interested = products_interested
+    
+    # Update the enquiry
+    if update_data:
+        enquiry = service.update_enquiry(enquiry_id, **update_data)
+    
+    enquiry.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(enquiry)
+    
+    print(f"DEBUG: Enquiry updated successfully")
+    return enrich_enquiry(enquiry, db)
 
+    
 @router.put("/enquiries/{enquiry_id}", response_model=EnquiryResponse)
 def update_enquiry(
     company_id: str,

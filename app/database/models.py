@@ -39,6 +39,7 @@ class InvoiceStatus(str, PyEnum):
     PARTIALLY_PAID = "partially_paid"
     OVERDUE = "overdue"
     CANCELLED = "cancelled"
+    COMPLETED = "completed"
     REFUNDED = "refunded"
     VOID = "void"
     WRITE_OFF = "write_off"
@@ -3801,13 +3802,12 @@ class EnquirySource(str, PyEnum):
 class EnquiryStatus(str, PyEnum):
     """Enquiry status enumeration."""
     NEW = "new"
-    CONTACTED = "contacted"
-    QUALIFIED = "qualified"
-    PROPOSAL_SENT = "proposal_sent"
-    NEGOTIATION = "negotiation"
-    WON = "won"
-    LOST = "lost"
-    ON_HOLD = "on_hold"
+    PENDING = "pending" 
+    CONVERTED_TO_QUOT="Converted_to_quotation"
+    IGNORED="ignored"
+    COMPLETED="completed"
+    READY_FOR_QUOT="ready_for_quotation"
+    READY_FOR_PURCHASE="ready_for_purchase"
 
 
 class SalesTicketStatus(str, PyEnum):
