@@ -216,7 +216,7 @@ export default function CustomersPage() {
                         {customer.tax_number || customer.gstin || "-"}
                       </td>
                       <td className="px-6 py-4">
-                       // In customers/page.tsx - fix line 220
+                   
 <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-dark-6 dark:bg-dark-3">
   {getTypeLabel(customer.customer_type || "")}
 </span>

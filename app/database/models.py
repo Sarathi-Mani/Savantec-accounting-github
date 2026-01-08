@@ -609,6 +609,7 @@ class OpeningBalanceItem(Base):
     id = Column(String(36), primary_key=True, default=generate_uuid)
     customer_id = Column(String(36), ForeignKey("customers.id", ondelete="CASCADE"), nullable=False)
     date = Column(Date, nullable=False)
+    
     voucher_name = Column(String(255), nullable=False)
     days = Column(Integer)
     amount = Column(Numeric(15, 2), nullable=False)

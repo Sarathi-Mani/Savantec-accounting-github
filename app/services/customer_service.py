@@ -29,6 +29,7 @@ class CustomerService:
         credit_limit = Decimal(data.credit_limit) if data.credit_limit else Decimal('0')
         credit_days = int(data.credit_days) if data.credit_days else 0
         
+        
         # Calculate outstanding and advance balances
         outstanding_balance = Decimal('0')
         advance_balance = Decimal('0')
@@ -100,6 +101,7 @@ class CustomerService:
                 item = OpeningBalanceItem(
                     customer_id=customer.id,
                     date=item_data.date,
+                    
                     voucher_name=item_data.voucher_name,
                     days=int(item_data.days) if item_data.days else None,
                     amount=Decimal(item_data.amount)
