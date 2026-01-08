@@ -63,19 +63,6 @@ export interface LoginRequest {
   password: string;
 }
 
-// Add these interfaces after the ContactPerson interface (around line ~30)
-interface ContactPerson {
-  name: string;
-  email: string;
-  phone: string;
-}
-
-interface OpeningBalanceItem {
-  date: string;
-  voucher_name: string;
-  days?: number;
-  amount: number;
-}
 
 export interface RegisterRequest {
   email: string;
@@ -179,45 +166,92 @@ export interface DashboardSummary {
   };
 }
 
-// Update the Customer interface near line ~60
+// In frontend/src/services/api.ts - Update your Customer interface
 export interface Customer {
   id: string;
   company_id: string;
   name: string;
-  trade_name?: string;
-  gstin?: string;
-  pan?: string;
-  mobile?: string; 
+  contact: string;
   email?: string;
-  phone?: string;
-  contact_person?: string;
-  contact_persons?: ContactPerson[]; // Add this line
-  billing_address_line1?: string;
-  billing_address_line2?: string;
+  mobile?: string;
+  tax_number?: string;
+  gst_registration_type?: string;
+  pan_number?: string;  // Add this
+  vendor_code?: string;
+  opening_balance?: number;
+  opening_balance_type?: string;
+  opening_balance_mode?: string;
+  outstanding_balance?: number;
+  advance_balance?: number;
+  credit_limit?: number;
+  credit_days?: number;
+  customer_code?: string;
+  total_transactions?: number;
+  last_transaction_date?: string;
+  billing_address?: string;  // Add this
   billing_city?: string;
   billing_state?: string;
-  billing_state_code?: string;
-  billing_pincode?: string;
-  billing_country: string;
-  shipping_address_line1?: string;
-  shipping_address_line2?: string;
+  billing_country?: string;
+  billing_zip?: string;  // Add this
+  shipping_address?: string;  // Add this
   shipping_city?: string;
   shipping_state?: string;
-  shipping_state_code?: string;
+  shipping_country?: string;
+  shipping_zip?: string;  // Add this
+  customer_type?: string;
+  contact_person_name?: string;
+  is_active?: boolean;
+  created_at?: string;
+  updated_at?: string;
+  deleted_at?: string;
+  
+  // For backward compatibility
+  gstin?: string;
+  pan?: string;
+  phone?: string;
+  trade_name?: string;
+  billing_pincode?: string;
   shipping_pincode?: string;
-  shipping_country: string;
-  customer_type: string;
-  opening_balance?: number; // Add this line
-  opening_balance_type?: "outstanding" | "advance"; // Add this line
-  opening_balance_mode?: "single" | "split"; // Add this line
-  opening_balance_split?: OpeningBalanceItem[]; // Add this line
-  credit_limit?: number; // Add this line
-  credit_days?: number; // Add this line
-  vendor_code?: string; // Add this line
-  gst_registration_type?: string; // Add this line
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
+  contact_person?: string;
+  
+  // Relationships - ADD THESE
+  opening_balance_items?: OpeningBalanceItem[];
+  contact_persons?: ContactPerson[];
+  
+}
+
+// Update OpeningBalanceItem interface
+export interface OpeningBalanceItem {
+  id: string;
+  customer_id: string;
+  date: string;
+  voucher_name: string;
+  days?: number;
+  amount: number;
+  created_at?: string;
+  updated_at?: string;
+}
+export interface Contact {
+  id: string;
+  customer_id: string;
+  name?: string;
+  email?: string;
+  phone?: string;
+  designation?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+
+// Update ContactPerson interface
+export interface ContactPerson {
+  id: string;  // Add this
+  customer_id: string;
+  name: string;
+  email?: string;
+  phone?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface CustomerListResponse {

@@ -259,79 +259,74 @@ class CustomerUpdate(BaseModel):
 
 
 class CustomerResponse(BaseModel):
-    """Schema for customer response."""
     id: str
     company_id: str
-    
-    # Basic Information
     name: str
     contact: str
     email: Optional[str] = None
     mobile: Optional[str] = None
-    
-    # Tax Information
     tax_number: Optional[str] = None
     gst_registration_type: Optional[str] = None
     pan_number: Optional[str] = None
     vendor_code: Optional[str] = None
-    
-    # Financial Information
-    opening_balance: Optional[Decimal] = None
+    opening_balance: Optional[Decimal] = 0
     opening_balance_type: Optional[str] = None
     opening_balance_mode: Optional[str] = None
-    credit_limit: Optional[Decimal] = None
-    credit_days: Optional[int] = None
-    
-    # Contact Persons
-    contact_persons: List[ContactPersonResponse] = []
-    
-    # Opening Balance Split Items (if any)
-    opening_balance_split: List[Dict[str, Any]] = []
-    
-    # Billing Address
+    outstanding_balance: Optional[Decimal] = 0
+    advance_balance: Optional[Decimal] = 0
+    credit_limit: Optional[Decimal] = 0
+    credit_days: Optional[int] = 0
+    customer_code: Optional[str] = None
+    total_transactions: Optional[int] = 0
+    last_transaction_date: Optional[date] = None
     billing_address: Optional[str] = None
     billing_city: Optional[str] = None
     billing_state: Optional[str] = None
-    billing_country: str = "India"
+    billing_country: Optional[str] = "India"
     billing_zip: Optional[str] = None
-    
-    # Shipping Address
     shipping_address: Optional[str] = None
     shipping_city: Optional[str] = None
     shipping_state: Optional[str] = None
-    shipping_country: str = "India"
+    shipping_country: Optional[str] = "India"
     shipping_zip: Optional[str] = None
+    customer_type: Optional[str] = "b2b"
+    contact_person_name: Optional[str] = None
+    is_active: Optional[bool] = True
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    deleted_at: Optional[datetime] = None
     
-    # Additional Info
-    customer_type: Optional[str] = None
+    # Legacy fields for frontend compatibility
+    gstin: Optional[str] = None
+    pan: Optional[str] = None
+    phone: Optional[str] = None
+    trade_name: Optional[str] = None
+    contact_person: Optional[str] = None
+    billing_pincode: Optional[str] = None
+    shipping_pincode: Optional[str] = None
     
-    # System fields
-    is_active: bool = True
-    created_at: datetime
-    updated_at: datetime
+    # Relationships
+    opening_balance_items: List[OpeningBalanceItemResponse] = []
+    contact_persons: List[ContactPersonResponse] = []
     
-    # For backward compatibility
-    @property
-    def gstin(self) -> Optional[str]:
-        return self.tax_number
-    
-    @property
-    def pan(self) -> Optional[str]:
-        return self.pan_number
-    
-    @property
-    def billing_pincode(self) -> Optional[str]:
-        return self.billing_zip
-    
-    @property
-    def shipping_pincode(self) -> Optional[str]:
-        return self.shipping_zip
-    
-    model_config = ConfigDict(
-        from_attributes=True,
-        populate_by_name=True
-    )
-
+    class Config:
+        from_attributes = True
+        json_encoders = {
+            Decimal: str,
+            datetime: lambda v: v.isoformat() if v else None,
+            date: lambda v: v.isoformat() if v else None,
+        }
+        
+        @staticmethod
+        def schema_extra(schema: dict, model) -> None:
+            # Add computed properties for legacy fields
+            schema['properties']['gstin'] = {'type': 'string', 'nullable': True}
+            schema['properties']['pan'] = {'type': 'string', 'nullable': True}
+            schema['properties']['phone'] = {'type': 'string', 'nullable': True}
+            schema['properties']['trade_name'] = {'type': 'string', 'nullable': True}
+            schema['properties']['contact_person'] = {'type': 'string', 'nullable': True}
+            schema['properties']['billing_pincode'] = {'type': 'string', 'nullable': True}
+            schema['properties']['shipping_pincode'] = {'type': 'string', 'nullable': True}
 
 class CustomerListResponse(BaseModel):
     """Schema for customer list response."""
