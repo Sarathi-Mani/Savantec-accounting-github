@@ -34,7 +34,7 @@ export default function DesignationsPage() {
       );
       setDesignations(response.data);
     } catch (error) {
-      console.error("Error fetching designations:", error);
+      console.error("Error fetching roles:", error);
     } finally {
       setLoading(false);
     }
@@ -57,11 +57,11 @@ export default function DesignationsPage() {
 
   return (
     <>
-      <Breadcrumb pageName="Designations" />
+      <Breadcrumb pageName="Roles" />
 
       <div className="flex justify-end mb-4">
         <button onClick={() => setShowModal(true)} className="flex justify-center rounded bg-primary px-6 py-2 font-medium text-gray hover:bg-opacity-90">
-          + Add Designation
+          + Add Roles
         </button>
       </div>
 
@@ -92,7 +92,7 @@ export default function DesignationsPage() {
                 </tr>
               ))}
               {designations.length === 0 && !loading && (
-                <tr><td colSpan={5} className="px-4 py-5 text-center text-body">No designations found.</td></tr>
+                <tr><td colSpan={5} className="px-4 py-5 text-center text-body">No roles found.</td></tr>
               )}
             </tbody>
           </table>
@@ -102,7 +102,7 @@ export default function DesignationsPage() {
       {showModal && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black bg-opacity-50">
           <div className="w-full max-w-md rounded-sm border border-stroke bg-white p-6 shadow-default dark:border-strokedark dark:bg-boxdark">
-            <h3 className="mb-4 text-xl font-semibold text-black dark:text-white">Add Designation</h3>
+            <h3 className="mb-4 text-xl font-semibold text-black dark:text-white">Add Roles</h3>
             <form onSubmit={handleSubmit}>
               <div className="mb-4">
                 <label className="mb-2.5 block text-black dark:text-white">Name *</label>

@@ -34,7 +34,7 @@ export const NAV_DATA = [
           { title: "All Employees", url: "/payroll/employees" },
           { title: "Add Employee", url: "/payroll/employees/new" },
           { title: "Departments", url: "/payroll/departments" },
-          { title: "Designations", url: "/payroll/designations" },
+          { title: "Roles", url: "/payroll/designations" },
         ],
       },
     ]

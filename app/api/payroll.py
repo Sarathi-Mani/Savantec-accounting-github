@@ -76,7 +76,7 @@ class DesignationResponse(BaseModel):
 
 
 class EmployeeCreate(BaseModel):
-    employee_code: str
+    employee_code: Optional[str] = None
     first_name: str
     last_name: Optional[str] = None
     date_of_birth: Optional[date] = None
@@ -360,20 +360,25 @@ async def create_employee(
     """Create a new employee."""
     company = get_company_or_404(company_id, current_user, db)
     
-    # Check for duplicate employee code
+    # Generate employee code
+    payroll_service = PayrollService(db)
+    employee_code = payroll_service._generate_employee_code(company.id)
+    
+    # Check for duplicate employee code (just in case)
     existing = db.query(Employee).filter(
         Employee.company_id == company.id,
-        Employee.employee_code == data.employee_code,
+        Employee.employee_code == employee_code,
     ).first()
     
     if existing:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Employee with code {data.employee_code} already exists"
-        )
+        # Regenerate if duplicate
+        employee_code = payroll_service._generate_employee_code(company.id)
     
+    # Prepare employee data
     employee_data = data.model_dump()
     employee_data["full_name"] = f"{data.first_name} {data.last_name or ''}".strip()
+    employee_data["employee_code"] = employee_code  # Add generated code here
+    
     if data.ctc:
         employee_data["ctc"] = Decimal(str(data.ctc))
     
@@ -386,7 +391,7 @@ async def create_employee(
     db.refresh(employee)
     
     return employee
-
+    
 
 @router.get("/employees", response_model=List[EmployeeResponse])
 async def list_employees(

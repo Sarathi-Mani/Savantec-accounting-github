@@ -113,11 +113,22 @@ export default function NewEmployeePage() {
 
 
 
+  const calculateCTC = (data: typeof formData) => {
+    const monthlyBasic = parseFloat(data.monthly_basic) || 0;
+    const monthlyHra = parseFloat(data.monthly_hra) || 0;
+    const monthlySpecialAllowance = parseFloat(data.monthly_special_allowance) || 0;
+    const monthlyConveyance = parseFloat(data.monthly_conveyance) || 0;
+    const monthlyMedical = parseFloat(data.monthly_medical) || 0;
 
+    const monthlyTotal = monthlyBasic + monthlyHra + monthlySpecialAllowance + monthlyConveyance + monthlyMedical;
+    const annualCTC = monthlyTotal * 12;
+
+    return annualCTC.toString();
+  };
 
   const [formData, setFormData] = useState({
     // Personal (existing)
-    employee_code: "",
+    
     first_name: "",
     last_name: "",
     date_of_birth: "",
@@ -223,35 +234,38 @@ export default function NewEmployeePage() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!companyId) return;
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  if (!companyId) return;
 
-    try {
-      setLoading(true);
-      setError(null);
+  try {
+    setLoading(true);
+    setError(null);
 
-      const data = {
-        ...formData,
-        ctc: formData.ctc ? parseFloat(formData.ctc) : undefined,
-        monthly_basic: formData.monthly_basic ? parseFloat(formData.monthly_basic) : undefined,
-        monthly_hra: formData.monthly_hra ? parseFloat(formData.monthly_hra) : undefined,
-        monthly_special_allowance: formData.monthly_special_allowance ? parseFloat(formData.monthly_special_allowance) : undefined,
-        monthly_conveyance: formData.monthly_conveyance ? parseFloat(formData.monthly_conveyance) : undefined,
-        monthly_medical: formData.monthly_medical ? parseFloat(formData.monthly_medical) : undefined,
-        children_count: parseInt(formData.children_count.toString()),
-        department_id: formData.department_id || undefined,
-        designation_id: formData.designation_id || undefined,
-      };
+    // Create a new object WITHOUT employee_code
+    const { employee_code, ...dataToSend } = formData;
 
-      await payrollApi.createEmployee(companyId, data);
-      router.push("/payroll/employees");
-    } catch (err: any) {
-      setError(getErrorMessage(err, "Failed to create employee"));
-    } finally {
-      setLoading(false);
-    }
-  };
+    const data = {
+      ...dataToSend,
+      ctc: dataToSend.ctc ? parseFloat(dataToSend.ctc) : undefined,
+      monthly_basic: dataToSend.monthly_basic ? parseFloat(dataToSend.monthly_basic) : undefined,
+      monthly_hra: dataToSend.monthly_hra ? parseFloat(dataToSend.monthly_hra) : undefined,
+      monthly_special_allowance: dataToSend.monthly_special_allowance ? parseFloat(dataToSend.monthly_special_allowance) : undefined,
+      monthly_conveyance: dataToSend.monthly_conveyance ? parseFloat(dataToSend.monthly_conveyance) : undefined,
+      monthly_medical: dataToSend.monthly_medical ? parseFloat(dataToSend.monthly_medical) : undefined,
+      children_count: parseInt(dataToSend.children_count.toString()),
+      department_id: dataToSend.department_id || undefined,
+      designation_id: dataToSend.designation_id || undefined,
+    };
+
+    await payrollApi.createEmployee(companyId, data);
+    router.push("/payroll/employees");
+  } catch (err: any) {
+    setError(getErrorMessage(err, "Failed to create employee"));
+  } finally {
+    setLoading(false);
+  }
+};
 
   const tabs = [
     { id: "personal", label: "Personal Details", icon: User },
@@ -321,17 +335,15 @@ export default function NewEmployeePage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Employee Code <span className="text-red-500">*</span>
+                    Employee Code
                   </label>
                   <input
                     type="text"
-                    name="employee_code"
-                    value={formData.employee_code}
-                    onChange={handleChange}
-                    required
-                    placeholder="EMP001"
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/40 transition"
+                    value="Will be auto-generated"
+                    disabled
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 cursor-not-allowed"
                   />
+                  <p className="text-xs text-gray-500 mt-1">Auto-generated after saving</p>
                 </div>
 
                 <div>
@@ -844,7 +856,7 @@ export default function NewEmployeePage() {
                   </div>
                 </div>
 
-              
+
               </div>
             )}
 
@@ -950,8 +962,8 @@ export default function NewEmployeePage() {
                             setFormData(prev => ({
                               ...prev,
                               ctc: ctcValue,
-                              // Auto-calculate monthly components if CTC is provided
-                              ...(ctcValue && {
+                              // Only auto-calculate monthly components if using CTC breakup method
+                              ...(formData.salary_calculation_method === "ctc_breakup" && ctcValue && {
                                 monthly_basic: Math.round(parseFloat(ctcValue) * 0.4 / 12).toString(),
                                 monthly_hra: Math.round(parseFloat(ctcValue) * 0.2 / 12).toString(),
                                 monthly_special_allowance: Math.round(parseFloat(ctcValue) * 0.3 / 12).toString(),
@@ -965,9 +977,12 @@ export default function NewEmployeePage() {
                           className="w-full pl-8 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/40 transition"
                         />
                       </div>
-                      <p className="text-xs text-gray-500 mt-1">Cost to Company per annum</p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        {formData.salary_calculation_method === "ctc_breakup"
+                          ? "Cost to Company per annum"
+                          : "Auto-calculated from monthly components"}
+                      </p>
                     </div>
-
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                         Salary Calculation Method
@@ -1041,7 +1056,18 @@ export default function NewEmployeePage() {
                           type="number"
                           name="monthly_basic"
                           value={formData.monthly_basic}
-                          onChange={handleChange}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            setFormData(prev => ({
+                              ...prev,
+                              monthly_basic: value,
+                              // Calculate CTC when monthly components change
+                              ctc: calculateCTC({
+                                ...formData,
+                                monthly_basic: value
+                              })
+                            }));
+                          }}
                           className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary text-sm"
                         />
                       </div>
@@ -1053,7 +1079,17 @@ export default function NewEmployeePage() {
                           type="number"
                           name="monthly_hra"
                           value={formData.monthly_hra}
-                          onChange={handleChange}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            setFormData(prev => ({
+                              ...prev,
+                              monthly_hra: value,
+                              ctc: calculateCTC({
+                                ...formData,
+                                monthly_hra: value
+                              })
+                            }));
+                          }}
                           className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary text-sm"
                         />
                       </div>
@@ -1065,7 +1101,17 @@ export default function NewEmployeePage() {
                           type="number"
                           name="monthly_special_allowance"
                           value={formData.monthly_special_allowance}
-                          onChange={handleChange}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            setFormData(prev => ({
+                              ...prev,
+                              monthly_special_allowance: value,
+                              ctc: calculateCTC({
+                                ...formData,
+                                monthly_special_allowance: value
+                              })
+                            }));
+                          }}
                           className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary text-sm"
                         />
                       </div>
@@ -1077,7 +1123,17 @@ export default function NewEmployeePage() {
                           type="number"
                           name="monthly_conveyance"
                           value={formData.monthly_conveyance}
-                          onChange={handleChange}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            setFormData(prev => ({
+                              ...prev,
+                              monthly_conveyance: value,
+                              ctc: calculateCTC({
+                                ...formData,
+                                monthly_conveyance: value
+                              })
+                            }));
+                          }}
                           className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary text-sm"
                         />
                       </div>
@@ -1089,7 +1145,17 @@ export default function NewEmployeePage() {
                           type="number"
                           name="monthly_medical"
                           value={formData.monthly_medical}
-                          onChange={handleChange}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            setFormData(prev => ({
+                              ...prev,
+                              monthly_medical: value,
+                              ctc: calculateCTC({
+                                ...formData,
+                                monthly_medical: value
+                              })
+                            }));
+                          }}
                           className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary text-sm"
                         />
                       </div>

@@ -2420,7 +2420,7 @@ export interface Employee {
 }
 
 export interface EmployeeCreate {
-  employee_code: string;
+  employee_code?: string;
   first_name: string;
   last_name?: string;
   date_of_birth?: string;

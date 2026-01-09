@@ -47,6 +47,27 @@ class SalaryBreakdown:
 class PayrollService:
     """Main payroll processing service."""
     
+    def _generate_employee_code(self, company_id: str) -> str:
+        """Generate next employee code in EMP001 format."""
+        # Get the highest existing employee code
+        last_employee = self.db.query(Employee).filter(
+            Employee.company_id == company_id,
+            Employee.employee_code.like('EMP%')
+        ).order_by(Employee.employee_code.desc()).first()
+        
+        if not last_employee:
+            return "EMP001"
+        
+        try:
+            # Extract the numeric part and increment
+            last_number = int(last_employee.employee_code[3:])  # Remove 'EMP' prefix
+            next_number = last_number + 1
+            return f"EMP{next_number:03d}"  # Format as 3-digit number
+        except (ValueError, IndexError):
+            # Fallback if format is wrong
+            return "EMP001"
+
+
     def __init__(self, db: Session):
         self.db = db
         self.pf_service = PFService(db)
