@@ -113,26 +113,22 @@ export default function CategoriesPage() {
                                 <tr className="border-b border-stroke dark:border-dark-3">
                                     <th className="px-6 py-4 text-left text-sm font-medium text-dark-6">Category Name</th>
                                     <th className="px-6 py-4 text-left text-sm font-medium text-dark-6">Description</th>
-                                    <th className="px-6 py-4 text-left text-sm font-medium text-dark-6">Products</th>
                                     <th className="px-6 py-4 text-right text-sm font-medium text-dark-6">Actions</th>
                                 </tr>
                             </thead>
-                            {/* In the table body section */}
                             <tbody>
                                 {data?.categories.map((category) => (
                                     <tr key={category.id} className="border-b border-stroke last:border-0 dark:border-dark-3">
                                         <td className="px-6 py-4">
                                             <div>
                                                 <p className="font-medium text-dark dark:text-white">{category.name}</p>
+                                                <p className="text-xs text-dark-6">
+                                                    Created: {new Date(category.created_at).toLocaleDateString()}
+                                                </p>
                                             </div>
                                         </td>
                                         <td className="px-6 py-4">
                                             <p className="text-dark-6 line-clamp-2">{category.description || "-"}</p>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-dark-6 dark:bg-dark-3">
-                                                {category.product_count || 0} products
-                                            </span>
                                         </td>
                                         <td className="px-6 py-4">
                                             <div className="flex items-center justify-end gap-2">
@@ -147,9 +143,8 @@ export default function CategoriesPage() {
                                                 </Link>
                                                 <button
                                                     onClick={() => handleDelete(category.id)}
-                                                    disabled={(category.product_count || 0) > 0}
-                                                    className="rounded p-1.5 text-red-500 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-red-900/20"
-                                                    title={(category.product_count || 0) > 0 ? "Cannot delete category with products" : "Delete"}
+                                                    className="rounded p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
+                                                    title="Delete"
                                                 >
                                                     <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />

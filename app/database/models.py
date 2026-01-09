@@ -468,39 +468,61 @@ class User(Base):
 
 
 class Brand(Base):
-    """Brand model for items."""
+    """Brand model for products."""
     __tablename__ = "brands"
     
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    name = Column(String(100), nullable=False)
-    status = Column(Boolean, default=True)
-    created_by = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    company_id = Column(String(36), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(191), nullable=False)
+    description = Column(Text, nullable=True)
+    created_by = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     
+    # Soft delete
+    deleted_at = Column(DateTime, nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
     # Relationships
+    company = relationship("Company")
     creator = relationship("User")
     
+    __table_args__ = (
+        Index("idx_brands_company", "company_id"),
+        Index("idx_brands_name", "company_id", "name"),
+    )
+    
     def __repr__(self):
-        return f"<Brand(id={self.id}, name='{self.name}')>"
-
+        return f"<Brand(id={self.id}, name='{self.name}', company_id={self.company_id})>"
 
 class Category(Base):
-    """Category model for items."""
+    """Category model for products."""
     __tablename__ = "categories"
     
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    name = Column(String(100), nullable=False)
-    status = Column(Boolean, default=True)
-    created_by = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    company_id = Column(String(36), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(191), nullable=False)
+    description = Column(Text, nullable=True)
+    created_by = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     
+    # Soft delete
+    deleted_at = Column(DateTime, nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
     # Relationships
+    company = relationship("Company")
     creator = relationship("User")
     
+    __table_args__ = (
+        Index("idx_categories_company", "company_id"),
+        Index("idx_categories_name", "company_id", "name"),
+    )
+    
     def __repr__(self):
-        return f"<Category(id={self.id}, name='{self.name}')>"
-
-
+        return f"<Category(id={self.id}, name='{self.name}', company_id={self.company_id})>"
+        
 class Tax(Base):
     """Tax model for items."""
     __tablename__ = "taxes"
@@ -768,6 +790,12 @@ class Product(Base):
     batches = relationship("Batch", back_populates="product", cascade="all, delete-orphan")
     bom_components = relationship("BOMComponent", back_populates="component_product", cascade="all, delete-orphan")
     
+    brand_id = Column(String(36), ForeignKey("brands.id", ondelete="SET NULL"), nullable=True, index=True)
+    category_id = Column(String(36), ForeignKey("categories.id", ondelete="SET NULL"), nullable=True, index=True)
+     # Add these relationships
+    brand = relationship("Brand", backref="products")
+    category = relationship("Category", backref="products")
+
     # Add the missing relationship for stock_entries
     stock_entries = relationship("StockEntry", back_populates="product", cascade="all, delete-orphan")
     alternative_mappings = relationship("ProductAlternativeMapping", back_populates="product", cascade="all, delete-orphan")

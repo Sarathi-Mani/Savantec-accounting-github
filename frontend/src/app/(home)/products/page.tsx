@@ -170,7 +170,7 @@ export default function ProductsPage() {
                     </td>
                     <td className="px-6 py-4">
                       {product.brand ? (
-                        <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-dark-6 dark:bg-dark-3">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-dark-6 dark:bg-dark-3">
                           {product.brand.name}
                         </span>
                       ) : (
@@ -179,7 +179,7 @@ export default function ProductsPage() {
                     </td>
                     <td className="px-6 py-4">
                       {product.category ? (
-                        <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-dark-6 dark:bg-dark-3">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-dark-6 dark:bg-dark-3">
                           {product.category.name}
                         </span>
                       ) : (
@@ -190,14 +190,52 @@ export default function ProductsPage() {
                     <td className="px-6 py-4">
                       <span
                         className={`rounded-full px-3 py-1 text-xs font-medium ${product.is_service
-                            ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
-                            : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                          ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
+                          : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
                           }`}
                       >
                         {product.is_service ? "Service" : "Product"}
                       </span>
                     </td>
-                    {/* ... rest of the product row remains the same ... */}
+                    <td className="px-6 py-4 text-right">
+                      <span className="font-medium text-dark dark:text-white">
+                        ₹{parseFloat(product.unit_price.toString()).toFixed(2)}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                      <span className="text-dark-6">{product.gst_rate}%</span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      {!product.is_service && product.current_stock !== null ? (
+                        <span className={`font-medium ${parseFloat(product.current_stock.toString()) < 10 ? 'text-red-500' : 'text-green-500'}`}>
+                          {parseFloat(product.current_stock.toString())}
+                        </span>
+                      ) : (
+                        <span className="text-dark-6">-</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center justify-end gap-2">
+                        <Link
+                          href={`/products/${product.id}/edit`}
+                          className="rounded p-1.5 hover:bg-gray-100 dark:hover:bg-dark-3"
+                          title="Edit"
+                        >
+                          <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                        </Link>
+                        <button
+                          onClick={() => handleDelete(product.id)}
+                          className="rounded p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
+                          title="Delete"
+                        >
+                          <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>

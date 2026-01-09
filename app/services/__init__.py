@@ -5,6 +5,10 @@ from app.services.product_service import ProductService
 from app.services.invoice_service import InvoiceService
 from app.services.payment_service import PaymentService
 from app.services.gst_service import GSTService
+"""Services package."""
+from .company_service import CompanyService
+from .brand_service import BrandService
+from .category_service import CategoryService
 
 __all__ = [
     "CompanyService",
@@ -13,5 +17,7 @@ __all__ = [
     "InvoiceService",
     "PaymentService",
     "GSTService",
+    "BrandService",  # Add this
+    "CategoryService",  # Add this
 ]
 
