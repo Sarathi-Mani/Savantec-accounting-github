@@ -21,6 +21,9 @@ from app.api import (
     sales_tickets_router,
     sales_dashboard_router,
     alternative_products_router,
+    # Add these imports
+    brands_router,
+    categories_router,
 )
 from app.api.accounting import router as accounting_router
 from app.api.quick_entry import router as quick_entry_router
@@ -118,6 +121,10 @@ app.include_router(sales_tickets_router)
 app.include_router(sales_dashboard_router)
 app.include_router(alternative_products_router, prefix="/api")
 
+# ADD THESE TWO LINES for brands and categories
+app.include_router(brands_router, prefix="/api")
+app.include_router(categories_router, prefix="/api")
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -159,7 +166,10 @@ async def api_info():
             "accounting": "/api/companies/{company_id}/accounts",
             "transactions": "/api/companies/{company_id}/transactions",
             "bank_import": "/api/companies/{company_id}/bank-import",
-            "reports": "/api/companies/{company_id}/reports"
+            "reports": "/api/companies/{company_id}/reports",
+            # Add these endpoints
+            "brands": "/api/companies/{company_id}/brands",
+            "categories": "/api/companies/{company_id}/categories"
         }
     }
 
