@@ -2,7 +2,7 @@
 
 import { useAuth } from "@/context/AuthContext";
 import { productsApi, brandsApi, categoriesApi, getErrorMessage } from "@/services/api";
-import { Link } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 
@@ -28,17 +28,30 @@ export default function NewProductPage() {
   const [loadingCategories, setLoadingCategories] = useState(false);
 
   const [formData, setFormData] = useState({
+    // Basic Information
     name: "",
     description: "",
     sku: "",
-    hsn: "",
-    unit_price: "",
-    unit: "unit",
-    gst_rate: "18",
-    is_inclusive: false,
-    is_service: false,
+    hsn_code: "",
     brand_id: "",
     category_id: "",
+    
+    // Product Type
+    is_service: false,
+    
+    // Pricing
+    unit_price: "",
+    unit: "unit",
+    
+    // Tax
+    gst_rate: "18",
+    is_inclusive: false,
+    
+    // Inventory Fields (for physical products only)
+    opening_stock: "0",
+    current_stock: "0",  // This will be auto-calculated from opening_stock + transactions
+    min_stock_level: "0",
+    standard_cost: "",
   });
 
   useEffect(() => {
@@ -66,11 +79,37 @@ export default function NewProductPage() {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: type === "checkbox" ? (e.target as HTMLInputElement).checked : value,
-    }));
+    
+    if (type === "checkbox") {
+      const checked = (e.target as HTMLInputElement).checked;
+      setFormData((prev) => ({
+        ...prev,
+        [name]: checked,
+        // When switching to service, reset inventory fields
+        ...(name === 'is_service' && checked ? {
+          opening_stock: "0",
+          current_stock: "0",
+          min_stock_level: "0"
+        } : {})
+      }));
+    } else {
+      setFormData((prev) => ({
+        ...prev,
+        [name]: value,
+      }));
+    }
     setError(null);
+  };
+
+  const handleNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    // Allow only numbers and decimal points
+    if (value === '' || /^\d*\.?\d*$/.test(value)) {
+      setFormData((prev) => ({
+        ...prev,
+        [name]: value,
+      }));
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -87,18 +126,38 @@ export default function NewProductPage() {
       return;
     }
 
+    // Validate HSN code if provided
+    if (formData.hsn_code && (!/^\d{4,8}$/.test(formData.hsn_code))) {
+      setError("HSN/SAC code must be 4-8 digits");
+      return;
+    }
+
+    // Convert numeric fields
+    const unitPrice = parseFloat(formData.unit_price);
+    const openingStock = parseFloat(formData.opening_stock) || 0;
+    const minStockLevel = parseFloat(formData.min_stock_level) || 0;
+    const standardCost = formData.standard_cost ? parseFloat(formData.standard_cost) : undefined;
+
     setLoading(true);
     setError(null);
 
     try {
       await productsApi.create(company.id, {
-        ...formData,
-        unit_price: parseFloat(formData.unit_price),
-        hsn: formData.hsn || undefined,
-        sku: formData.sku || undefined,
+        name: formData.name.trim(),
         description: formData.description || undefined,
+        sku: formData.sku || undefined,
+        hsn_code: formData.hsn_code || undefined,
+        unit_price: unitPrice,
+        unit: formData.unit,
+        gst_rate: formData.gst_rate,
+        is_inclusive: formData.is_inclusive,
+        is_service: formData.is_service,
         brand_id: formData.brand_id || undefined,
         category_id: formData.category_id || undefined,
+        // Inventory fields
+        opening_stock: openingStock,
+        min_stock_level: minStockLevel,
+        standard_cost: standardCost,
       });
       router.push("/products");
     } catch (error: any) {
@@ -123,7 +182,7 @@ export default function NewProductPage() {
         <p className="text-sm text-dark-6">Add a new product or service</p>
       </div>
 
-      <form onSubmit={handleSubmit} className="max-w-2xl">
+      <form onSubmit={handleSubmit} className="max-w-4xl">
         {error && (
           <div className="mb-6 rounded-lg bg-red-50 p-4 text-red-600 dark:bg-red-900/20 dark:text-red-400">
             {error}
@@ -146,6 +205,7 @@ export default function NewProductPage() {
                   onChange={handleChange}
                   placeholder="Enter product name"
                   className="w-full rounded-lg border border-stroke bg-transparent px-4 py-3 outline-none focus:border-primary dark:border-dark-3"
+                  required
                 />
               </div>
               <div>
@@ -161,7 +221,7 @@ export default function NewProductPage() {
                   className="w-full rounded-lg border border-stroke bg-transparent px-4 py-3 outline-none focus:border-primary dark:border-dark-3"
                 />
               </div>
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-4 md:grid-cols-2">
                 <div>
                   <label className="mb-2 block text-sm font-medium text-dark dark:text-white">
                     SKU / Item Code
@@ -177,20 +237,21 @@ export default function NewProductPage() {
                 </div>
                 <div>
                   <label className="mb-2 block text-sm font-medium text-dark dark:text-white">
-                    HSN/SAC Code
+                    HSN/SAC Code (4-8 digits)
                   </label>
                   <input
                     type="text"
-                    name="hsn"
-                    value={formData.hsn}
+                    name="hsn_code"
+                    value={formData.hsn_code}
                     onChange={handleChange}
-                    placeholder="4-8 digit code"
+                    placeholder="Enter 4-8 digit HSN/SAC code"
+                    pattern="\d{4,8}"
                     maxLength={8}
                     className="w-full rounded-lg border border-stroke bg-transparent px-4 py-3 outline-none focus:border-primary dark:border-dark-3"
                   />
                 </div>
               </div>
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-4 md:grid-cols-2">
                 <div>
                   <label className="mb-2 block text-sm font-medium text-dark dark:text-white">
                     Brand
@@ -270,7 +331,7 @@ export default function NewProductPage() {
           {/* Pricing */}
           <div className="rounded-lg bg-white p-6 shadow-1 dark:bg-gray-dark">
             <h2 className="mb-4 text-lg font-semibold text-dark dark:text-white">Pricing & Tax</h2>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 md:grid-cols-2">
               <div>
                 <label className="mb-2 block text-sm font-medium text-dark dark:text-white">
                   Unit Price (₹) <span className="text-red-500">*</span>
@@ -279,10 +340,11 @@ export default function NewProductPage() {
                   type="number"
                   name="unit_price"
                   value={formData.unit_price}
-                  onChange={handleChange}
+                  onChange={handleNumberChange}
                   placeholder="0.00"
                   min="0"
                   step="0.01"
+                  required
                   className="w-full rounded-lg border border-stroke bg-transparent px-4 py-3 outline-none focus:border-primary dark:border-dark-3"
                 />
               </div>
@@ -344,11 +406,68 @@ export default function NewProductPage() {
             </div>
           </div>
 
+          {/* Inventory Section (Only for physical products) */}
+          {!formData.is_service && (
+            <div className="rounded-lg bg-white p-6 shadow-1 dark:bg-gray-dark">
+              <h2 className="mb-4 text-lg font-semibold text-dark dark:text-white">Inventory Settings</h2>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-dark dark:text-white">
+                    Opening Stock
+                  </label>
+                  <input
+                    type="number"
+                    name="opening_stock"
+                    value={formData.opening_stock}
+                    onChange={handleNumberChange}
+                    placeholder="0"
+                    min="0"
+                    step="1"
+                    className="w-full rounded-lg border border-stroke bg-transparent px-4 py-3 outline-none focus:border-primary dark:border-dark-3"
+                  />
+                  <p className="mt-1 text-xs text-dark-6">Initial stock quantity when adding product</p>
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-dark dark:text-white">
+                    Minimum Stock Level
+                  </label>
+                  <input
+                    type="number"
+                    name="min_stock_level"
+                    value={formData.min_stock_level}
+                    onChange={handleNumberChange}
+                    placeholder="0"
+                    min="0"
+                    step="1"
+                    className="w-full rounded-lg border border-stroke bg-transparent px-4 py-3 outline-none focus:border-primary dark:border-dark-3"
+                  />
+                  <p className="mt-1 text-xs text-dark-6">Get notified when stock goes below this level</p>
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-dark dark:text-white">
+                    Standard Cost (₹)
+                  </label>
+                  <input
+                    type="number"
+                    name="standard_cost"
+                    value={formData.standard_cost}
+                    onChange={handleNumberChange}
+                    placeholder="0.00"
+                    min="0"
+                    step="0.01"
+                    className="w-full rounded-lg border border-stroke bg-transparent px-4 py-3 outline-none focus:border-primary dark:border-dark-3"
+                  />
+                  <p className="mt-1 text-xs text-dark-6">Standard/Base cost for inventory valuation</p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Preview */}
           {formData.unit_price && parseFloat(formData.unit_price) > 0 && (
             <div className="rounded-lg bg-gray-50 p-4 dark:bg-dark-2">
               <p className="mb-2 text-sm font-medium text-dark-6">Price Preview</p>
-              <div className="grid gap-2 text-sm sm:grid-cols-2">
+              <div className="grid gap-2 text-sm md:grid-cols-2">
                 <div>
                   <span className="text-dark-6">Base Price: </span>
                   <span className="font-medium text-dark dark:text-white">
@@ -365,7 +484,7 @@ export default function NewProductPage() {
                       : (parseFloat(formData.unit_price) * parseInt(formData.gst_rate) / 100).toFixed(2)}
                   </span>
                 </div>
-                <div className="sm:col-span-2">
+                <div className="md:col-span-2">
                   <span className="text-dark-6">Final Price: </span>
                   <span className="font-semibold text-primary">
                     ₹{formData.is_inclusive
