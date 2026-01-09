@@ -31,7 +31,7 @@ export default function NewProductPage() {
     name: "",
     description: "",
     sku: "",
-    hsn_code: "",
+    hsn: "",
     unit_price: "",
     unit: "unit",
     gst_rate: "18",
@@ -94,7 +94,7 @@ export default function NewProductPage() {
       await productsApi.create(company.id, {
         ...formData,
         unit_price: parseFloat(formData.unit_price),
-        hsn_code: formData.hsn_code || undefined,
+        hsn: formData.hsn || undefined,
         sku: formData.sku || undefined,
         description: formData.description || undefined,
         brand_id: formData.brand_id || undefined,
@@ -181,8 +181,8 @@ export default function NewProductPage() {
                   </label>
                   <input
                     type="text"
-                    name="hsn_code"
-                    value={formData.hsn_code}
+                    name="hsn"
+                    value={formData.hsn}
                     onChange={handleChange}
                     placeholder="4-8 digit code"
                     maxLength={8}
