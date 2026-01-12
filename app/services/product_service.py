@@ -12,7 +12,7 @@ class ProductService:
     def __init__(self, db: Session):
         self.db = db
     
-        def create_product(self, company: Company, data: ProductCreate) -> Product:
+    def create_product(self, company: Company, data: ProductCreate) -> Product:
         """Create a new product for a company (unified with inventory)."""
         # Convert gst_rate to tax_type string
         tax_type_map = {
@@ -59,8 +59,15 @@ class ProductService:
         self.db.refresh(product)
         return product
 
+    def get_product(self, product_id: str, company_id: str) -> Optional[Product]:
+        """Get a single product by ID."""
+        return self.db.query(Product).filter(
+            Product.id == product_id,
+            Product.company_id == company_id,
+            Product.is_active == True
+        ).first()
     
-        def get_product_with_stock(self, product: Product) -> Dict[str, Any]:
+    def get_product_with_stock(self, product: Product) -> Dict[str, Any]:
         """Get product with stock information (unified model)."""
         # Extract gst_rate from tax_type string
         gst_rate = "18"  # Default
@@ -111,7 +118,6 @@ class ProductService:
             response_data["category"] = None
         
         return response_data
-        
     
     def update_product(self, product: Product, data: ProductUpdate) -> Product:
         """Update a product (unified with inventory)."""
@@ -144,52 +150,25 @@ class ProductService:
         self.db.commit()
         self.db.refresh(product)
         return product
-
     
-    def get_product_with_stock(self, product: Product) -> Dict[str, Any]:
-        """Get product with stock information (unified model)."""
+    def list_products(self, company_id: str, page: int = 1, page_size: int = 20) -> Dict[str, Any]:
+        """List products for a company."""
+        query = self.db.query(Product).filter(
+            Product.company_id == company_id,
+            Product.is_active == True
+        )
+        
+        total = query.count()
+        
+        products = query.offset((page - 1) * page_size).limit(page_size).all()
+        
         return {
-            "id": product.id,
-            "company_id": product.company_id,
-            "name": product.name,
-            "description": product.description,
-            "sku": product.sku,
-            "hsn_code": product.hsn_code,
-            "unit_price": product.price,  # Map from price to unit_price
-            "unit": product.unit,
-            "gst_rate": str(product.gst_rate),  # Convert float to string
-            "is_inclusive": product.is_inclusive,
-            "is_service": product.is_service,
-            "is_active": product.is_active,
-            "created_at": product.created_at,
-            "updated_at": product.updated_at,
-            "current_stock": float(product.quantity) if not product.is_service else None,
-            "min_stock_level": float(product.alert_quantity) if not product.is_service else None,
-            "opening_stock": float(product.opening_stock) if not product.is_service else None,
+            "products": [self.get_product_with_stock(product) for product in products],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": (total + page_size - 1) // page_size,
         }
-    
-    def update_product(self, product: Product, data: ProductUpdate) -> Product:
-        """Update a product (unified with inventory)."""
-        update_data = data.model_dump(exclude_unset=True)
-        
-        for field, value in update_data.items():
-            # Map unit_price to price and sales_price
-            if field == 'unit_price':
-                product.price = value
-                product.sales_price = value
-            elif field == 'gst_rate':
-                product.gst_rate = float(value)
-            elif field == 'current_stock':
-                product.quantity = int(value) if value is not None else 0
-            elif field == 'min_stock_level':
-                product.alert_quantity = int(value) if value is not None else 0
-            elif hasattr(product, field):
-                setattr(product, field, value)
-        
-        self.db.commit()
-        self.db.refresh(product)
-        return product
-
     
     def delete_product(self, product: Product) -> bool:
         """Soft delete a product."""
