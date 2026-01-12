@@ -35,7 +35,10 @@ async def create_product(
     company = get_company_or_404(company_id, current_user, db)
     service = ProductService(db)
     product = service.create_product(company, data)
-    return ProductResponse.model_validate(product)
+    
+    # Convert to response with proper mapping
+    product_response = service.get_product_with_stock(product)
+    return ProductResponse(**product_response)
 
 
 @router.get("", response_model=ProductListResponse)
@@ -55,13 +58,11 @@ async def list_products(
         company, page, page_size, search, is_service
     )
     
-    # Products now include stock information directly
+    # Convert products to response format
     product_responses = []
     for product in products:
-        product_dict = ProductResponse.model_validate(product).model_dump()
-        product_dict["current_stock"] = float(product.current_stock) if not product.is_service else None
-        product_dict["min_stock_level"] = float(product.min_stock_level) if not product.is_service else None
-        product_responses.append(ProductResponse(**product_dict))
+        product_data = service.get_product_with_stock(product)
+        product_responses.append(ProductResponse(**product_data))
     
     return ProductListResponse(
         products=product_responses,

@@ -18,6 +18,13 @@ class ProductCreate(BaseModel):
     gst_rate: str = "18"
     is_inclusive: bool = False
     is_service: bool = False
+    
+    # New fields for mapping
+    brand_id: Optional[str] = None
+    category_id: Optional[str] = None
+    opening_stock: Optional[Decimal] = Field(0, ge=0)
+    min_stock_level: Optional[Decimal] = Field(0, ge=0)
+    standard_cost: Optional[Decimal] = Field(None, ge=0)
 
     @field_validator("gst_rate")
     @classmethod
@@ -79,11 +86,16 @@ class ProductResponse(BaseModel):
     current_stock: Optional[Decimal] = None
     min_stock_level: Optional[Decimal] = None
     opening_stock: Optional[Decimal] = None
-    standard_cost: Optional[Decimal] = None
+    
+    # Optional relationships
+    brand: Optional[dict] = None
+    category: Optional[dict] = None
 
     class Config:
         from_attributes = True
+        extra = 'ignore'  # This will ignore item_group and other extra fields
 
+        
 
 class ProductListResponse(BaseModel):
     """Schema for product list response."""

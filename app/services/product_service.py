@@ -12,74 +12,139 @@ class ProductService:
     def __init__(self, db: Session):
         self.db = db
     
-    def create_product(self, company: Company, data: ProductCreate) -> Product:
+        def create_product(self, company: Company, data: ProductCreate) -> Product:
         """Create a new product for a company (unified with inventory)."""
-        product = Product(
-            company_id=company.id,
-            name=data.name,
-            description=data.description,
-            sku=data.sku,
-            hsn_code=data.hsn_code,
-            unit_price=data.unit_price,
-            unit=data.unit,
-            primary_unit=data.unit or "unit",
-            standard_selling_price=data.unit_price,
-            gst_rate=data.gst_rate,
-            is_inclusive=data.is_inclusive,
-            is_service=data.is_service,
-            # Stock fields default to 0 for services
-            opening_stock=Decimal("0"),
-            current_stock=Decimal("0"),
-            min_stock_level=Decimal("0"),
-        )
+        # Convert gst_rate to tax_type string
+        tax_type_map = {
+            "0": "GST 0%",
+            "5": "GST 5%", 
+            "12": "GST 12%",
+            "18": "GST 18%",
+            "28": "GST 28%"
+        }
+        tax_type = tax_type_map.get(data.gst_rate, "GST 18%")
+        
+        # Check if is_service column exists in model
+        model_attrs = [attr for attr in dir(Product) if not attr.startswith('_')]
+        
+        # Build product data with only valid attributes
+        product_data = {
+            "company_id": company.id,
+            "name": data.name,
+            "description": data.description,
+            "sku": data.sku,
+            "hsn_code": data.hsn_code,
+            "price": data.unit_price,
+            "sales_price": data.unit_price,
+            "unit": data.unit,
+            "tax_type": tax_type,
+            "brand_id": data.brand_id,
+            "category_id": data.category_id,
+            "opening_stock": int(data.opening_stock) if data.opening_stock else 0,
+            "quantity": int(data.opening_stock) if data.opening_stock else 0,
+            "alert_quantity": int(data.min_stock_level) if data.min_stock_level else 0,
+        }
+        
+        # Add optional fields only if they exist in the model
+        if 'is_inclusive' in model_attrs:
+            product_data["is_inclusive"] = data.is_inclusive
+        
+        if 'is_service' in model_attrs:
+            product_data["is_service"] = data.is_service
+        
+        product = Product(**product_data)
         
         self.db.add(product)
         self.db.commit()
         self.db.refresh(product)
         return product
+
     
-    def get_product(self, product_id: str, company: Company) -> Optional[Product]:
-        """Get a product by ID (must belong to company)."""
-        return self.db.query(Product).filter(
-            Product.id == product_id,
-            Product.company_id == company.id
-        ).first()
+        def get_product_with_stock(self, product: Product) -> Dict[str, Any]:
+        """Get product with stock information (unified model)."""
+        # Extract gst_rate from tax_type string
+        gst_rate = "18"  # Default
+        if hasattr(product, 'tax_type') and product.tax_type:
+            import re
+            match = re.search(r'GST\s*(\d+)%', product.tax_type)
+            if match:
+                gst_rate = match.group(1)
+        
+        response_data = {
+            "id": product.id,
+            "company_id": product.company_id,
+            "name": product.name,
+            "description": product.description,
+            "sku": product.sku,
+            "hsn_code": product.hsn_code,
+            "unit_price": product.price,
+            "unit": product.unit,
+            "gst_rate": gst_rate,
+            "is_active": product.is_active,
+            "created_at": product.created_at,
+            "updated_at": product.updated_at,
+            "current_stock": float(product.quantity) if hasattr(product, 'quantity') else None,
+            "min_stock_level": float(product.alert_quantity) if hasattr(product, 'alert_quantity') else None,
+            "opening_stock": float(product.opening_stock) if hasattr(product, 'opening_stock') else None,
+        }
+        
+        # Add optional fields if they exist
+        if hasattr(product, 'is_inclusive'):
+            response_data["is_inclusive"] = product.is_inclusive
+        else:
+            response_data["is_inclusive"] = False
+            
+        if hasattr(product, 'is_service'):
+            response_data["is_service"] = product.is_service
+        else:
+            response_data["is_service"] = False
+        
+        # Add relationships if they exist
+        if hasattr(product, 'brand') and product.brand:
+            response_data["brand"] = {"id": product.brand_id, "name": product.brand.name}
+        else:
+            response_data["brand"] = None
+            
+        if hasattr(product, 'category') and product.category:
+            response_data["category"] = {"id": product.category_id, "name": product.category.name}
+        else:
+            response_data["category"] = None
+        
+        return response_data
+        
     
-    def get_products(
-        self,
-        company: Company,
-        page: int = 1,
-        page_size: int = 20,
-        search: Optional[str] = None,
-        is_service: Optional[bool] = None
-    ) -> Tuple[List[Product], int]:
-        """Get all products for a company with pagination. Includes stock info."""
-        query = self.db.query(Product).filter(
-            Product.company_id == company.id,
-            Product.is_active == True
-        )
+    def update_product(self, product: Product, data: ProductUpdate) -> Product:
+        """Update a product (unified with inventory)."""
+        update_data = data.model_dump(exclude_unset=True)
         
-        # Search filter
-        if search:
-            search_filter = f"%{search}%"
-            query = query.filter(
-                (Product.name.ilike(search_filter)) |
-                (Product.sku.ilike(search_filter)) |
-                (Product.hsn_code.ilike(search_filter))
-            )
+        for field, value in update_data.items():
+            # Map unit_price to price and sales_price
+            if field == 'unit_price':
+                product.price = value
+                product.sales_price = value
+            elif field == 'gst_rate':
+                # Convert gst_rate to tax_type
+                tax_type_map = {
+                    "0": "GST 0%",
+                    "5": "GST 5%", 
+                    "12": "GST 12%",
+                    "18": "GST 18%",
+                    "28": "GST 28%"
+                }
+                product.tax_type = tax_type_map.get(str(value), "GST 18%")
+            elif field == 'current_stock':
+                product.quantity = int(value) if value is not None else 0
+            elif field == 'min_stock_level':
+                product.alert_quantity = int(value) if value is not None else 0
+            elif field == 'opening_stock':
+                product.opening_stock = int(value) if value is not None else 0
+            elif hasattr(product, field):
+                setattr(product, field, value)
         
-        # Service filter
-        if is_service is not None:
-            query = query.filter(Product.is_service == is_service)
-        
-        # Get total count
-        total = query.count()
-        
-        # Pagination
-        offset = (page - 1) * page_size
-        products = query.order_by(Product.name).offset(offset).limit(page_size).all()
-        
-        return products, total
+        self.db.commit()
+        self.db.refresh(product)
+        return product
+
     
     def get_product_with_stock(self, product: Product) -> Dict[str, Any]:
         """Get product with stock information (unified model)."""
@@ -90,16 +155,17 @@ class ProductService:
             "description": product.description,
             "sku": product.sku,
             "hsn_code": product.hsn_code,
-            "unit_price": product.unit_price,
+            "unit_price": product.price,  # Map from price to unit_price
             "unit": product.unit,
-            "gst_rate": product.gst_rate,
+            "gst_rate": str(product.gst_rate),  # Convert float to string
             "is_inclusive": product.is_inclusive,
             "is_service": product.is_service,
             "is_active": product.is_active,
             "created_at": product.created_at,
             "updated_at": product.updated_at,
-            "current_stock": float(product.current_stock) if not product.is_service else None,
-            "min_stock_level": float(product.min_stock_level) if not product.is_service else None,
+            "current_stock": float(product.quantity) if not product.is_service else None,
+            "min_stock_level": float(product.alert_quantity) if not product.is_service else None,
+            "opening_stock": float(product.opening_stock) if not product.is_service else None,
         }
     
     def update_product(self, product: Product, data: ProductUpdate) -> Product:
@@ -107,17 +173,23 @@ class ProductService:
         update_data = data.model_dump(exclude_unset=True)
         
         for field, value in update_data.items():
-            setattr(product, field, value)
-        
-        # Sync unit and primary_unit
-        if 'unit' in update_data:
-            product.primary_unit = product.unit or "unit"
-        if 'unit_price' in update_data:
-            product.standard_selling_price = product.unit_price
+            # Map unit_price to price and sales_price
+            if field == 'unit_price':
+                product.price = value
+                product.sales_price = value
+            elif field == 'gst_rate':
+                product.gst_rate = float(value)
+            elif field == 'current_stock':
+                product.quantity = int(value) if value is not None else 0
+            elif field == 'min_stock_level':
+                product.alert_quantity = int(value) if value is not None else 0
+            elif hasattr(product, field):
+                setattr(product, field, value)
         
         self.db.commit()
         self.db.refresh(product)
         return product
+
     
     def delete_product(self, product: Product) -> bool:
         """Soft delete a product."""
@@ -135,4 +207,3 @@ class ProductService:
             (Product.sku.ilike(search_filter)) |
             (Product.hsn_code.ilike(search_filter))
         ).limit(limit).all()
-
