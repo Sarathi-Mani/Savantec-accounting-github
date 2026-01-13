@@ -1,12 +1,32 @@
 "use client";
 
+import { PermissionProvider } from "@/context/PermissionContext";
+import AppLayoutWithPermission from "@/components/AppLayoutWithPermission";
 import { Header } from "@/components/Layouts/header";
 import { Sidebar } from "@/components/Layouts/sidebar";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
-export default function HomeLayout({
+// Main layout wrapper
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="en">
+      <body>
+        <PermissionProvider>
+          <HomeLayout>{children}</HomeLayout>
+        </PermissionProvider>
+      </body>
+    </html>
+  );
+}
+
+// Dashboard layout with sidebar
+function HomeLayout({
   children,
 }: {
   children: React.ReactNode;
@@ -49,7 +69,11 @@ export default function HomeLayout({
               <p className="text-sm">Please create a company profile to start using the invoicing features.</p>
             </div>
           )}
-          {children}
+          
+          {/* Automatic permission checking happens here */}
+          <AppLayoutWithPermission>
+            {children}
+          </AppLayoutWithPermission>
         </main>
       </div>
     </div>

@@ -87,40 +87,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [user, isLoading, isPublicRoute, router]);
 
-  const login = async (data: LoginRequest) => {
-    setIsLoading(true);
-    try {
-      const response = await authApi.login(data);
-      
-      // Store tokens and user
-      localStorage.setItem("access_token", response.access_token);
-      if (response.refresh_token) {
-        localStorage.setItem("refresh_token", response.refresh_token);
-      }
-      localStorage.setItem("user", JSON.stringify(response.user));
-      
-      setUser(response.user);
-
-      // Fetch companies after login
-      try {
-        const companiesList = await companiesApi.list();
-        setCompanies(companiesList);
-        
-        if (companiesList.length > 0) {
-          setCompany(companiesList[0]);
-          localStorage.setItem("company_id", companiesList[0].id);
-        }
-      } catch (error) {
-        console.error("Failed to fetch companies after login:", error);
-      }
-
-      router.push("/");
-    } catch (error: any) {
-      throw new Error(error.response?.data?.detail || "Login failed");
-    } finally {
-      setIsLoading(false);
+ // In login function
+const login = async (data: LoginRequest) => {
+  setIsLoading(true);
+  try {
+    const response = await authApi.login(data);
+    
+    // Store tokens and user
+    localStorage.setItem("access_token", response.access_token);
+    localStorage.setItem("user", JSON.stringify(response.user));
+    
+    // Store permissions if available
+    if (response.user.permissions) {
+      localStorage.setItem("userPermissions", JSON.stringify(response.user.permissions));
     }
-  };
+    
+    setUser(response.user);
+    router.push("/dashboard");
+    
+  } catch (error: any) {
+    throw new Error(error.response?.data?.detail || "Login failed");
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   const register = async (data: RegisterRequest) => {
     setIsLoading(true);

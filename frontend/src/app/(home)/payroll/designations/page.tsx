@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Breadcrumb from "@/components/Breadcrumbs/Breadcrumb";
 import { useAuth } from "@/context/AuthContext";
 import api from "@/services/api";
+import Link from 'next/link';
 
 interface Designation {
   id: string;
@@ -59,11 +60,14 @@ export default function DesignationsPage() {
     <>
       <Breadcrumb pageName="Roles" />
 
-      <div className="flex justify-end mb-4">
-        <button onClick={() => setShowModal(true)} className="flex justify-center rounded bg-primary px-6 py-2 font-medium text-gray hover:bg-opacity-90">
-          + Add Roles
-        </button>
-      </div>
+    
+<div className="flex justify-end mb-4">
+  <Link href="/payroll/designations/new">
+    <button className="flex justify-center rounded bg-primary px-6 py-2 font-medium text-gray hover:bg-opacity-90">
+      + Add Role
+    </button>
+  </Link>
+</div>
 
       <div className="rounded-sm border border-stroke bg-white shadow-default dark:border-strokedark dark:bg-boxdark">
         <div className="max-w-full overflow-x-auto">

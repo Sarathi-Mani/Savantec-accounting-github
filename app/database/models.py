@@ -800,14 +800,6 @@ class Product(Base):
     stock_entries = relationship("StockEntry", back_populates="product", cascade="all, delete-orphan")
     alternative_mappings = relationship("ProductAlternativeMapping", back_populates="product", cascade="all, delete-orphan")
     
-    def to_dict(self):
-        """Convert to dictionary excluding system-managed fields."""
-        data = {}
-        for column in self.__table__.columns:
-            if column.name not in ['item_group']:  # Exclude item_group
-                data[column.name] = getattr(self, column.name)
-        return data
-        
     def __repr__(self):
         return f"<Item(id={self.id}, name='{self.name}', sku='{self.sku}')>"
 

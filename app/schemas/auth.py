@@ -1,6 +1,6 @@
 """Authentication schemas."""
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional
+from typing import Optional,List
 from datetime import datetime
 
 
@@ -27,6 +27,16 @@ class UserResponse(BaseModel):
     is_active: bool
     is_verified: bool
     created_at: datetime
+
+    employee_id: Optional[str] = None
+    employee_code: Optional[str] = None
+    department_id: Optional[str] = None
+    designation_id: Optional[str] = None
+    designation: Optional[str] = None
+    role: Optional[str] = None
+    permissions: List[str] = []
+    status: Optional[str] = None 
+    
 
     class Config:
         from_attributes = True
